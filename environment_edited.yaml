@@ -1,0 +1,65 @@
+name: cmnext
+channels:
+  - pytorch
+  - conda-forge
+  - defaults
+dependencies:
+  - python=3.8.12
+  - pip
+  - cudatoolkit=11.3
+  - cudnn=8.2.1
+  - pytorch=1.13.1
+  - torchvision=0.14.1
+  - torchaudio=0.13.1  # torchaudio 버전 pytorch와 맞춤
+  - mkl=2021.4.0  # pytorch 1.13.1은 mkl 버전이 약간 높아야 함
+  - numpy=1.21.2
+  - pillow=9.2.0  # pillow 버전 충돌 해소 (8.3.1은 torchvision 충돌)
+  - ninja
+  - future
+  - ffmpeg
+  - jpeg
+  - libpng
+  - yaml
+  - zlib
+  - setuptools
+  - typing_extensions
+  - zstd
+  - lz4-c
+  - ncurses
+  - sqlite
+  - openssl
+  - tk
+  - xz
+  - readline
+  - sleef
+  - pip:
+    - absl-py==1.2.0
+    - addict==2.4.0
+    - attrs==23.1.0
+    - cachetools==5.0.0
+    - cycler==0.11.0
+    - easydict==1.9
+    - einops==0.4.1
+    - fire==0.4.0
+    - fvcore==0.1.5.post20220512
+    - google-auth==2.11.0
+    - grpcio==1.48.1
+    - jupyter==1.0.0
+    - matplotlib==3.4.3
+    - mmcv-full==1.6.1
+    - nuscenes-devkit==1.1.9
+    - opencv-python==4.5.3.56
+    - protobuf==3.18.1
+    - pycocotools
+    - pyquaternion==0.9.9
+    - pyyaml==6.0
+    - requests==2.28.1
+    - scikit-learn==1.0.2
+    - scipy==1.7.1
+    - shapely==1.8.1.post1
+    - tensorboard==2.10.0
+    - tensorboardx==2.4
+    - timm==0.4.12
+    - tqdm==4.62.3
+    - werkzeug==2.2.2
+    - yacs==0.1.8
