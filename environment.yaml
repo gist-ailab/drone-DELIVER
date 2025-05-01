@@ -1,4 +1,4 @@
-name: cmnext
+name: cmnext2
 channels:
   - pytorch
   - conda-forge
