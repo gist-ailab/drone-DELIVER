@@ -3,11 +3,11 @@ from pycocotools.coco import COCO
 import os
 import shutil
 import argparse
-
 import cv2
 import numpy as np
 import matplotlib.pyplot as plt
 import glob
+from tqdm import tqdm
 """
 num_classes: 25
 """
@@ -55,7 +55,8 @@ matching_dict ={
 }
 
 def mask_process(img_pth):
-    mask_pth  = img_pth.replace('rgb_', 'semantic_').replace('rgb', 'semantic')
+    mask_pth  = img_pth.replace('rgb_', 'semantic_').replace('img', 'semantic')
+    mask = cv2.imread(mask_pth)
     boxes_4 = extract_boxes(mask, None, 4)
     boxes_10 = extract_boxes(mask, None, 10)
     box_dict={
@@ -140,14 +141,15 @@ def create_coco_json(root_dir, img_lists, mode):
             "event_path" : img_path.replace('img', 'event').replace('rgb_', 'event_'),
         })
         
-        calculated_boxes= mask_process(img_path)
-        for id in calculated_boxes.keys():
-            boxes = calculated_boxes[id]
+        calculated_boxes= mask_process(os.path.join(root_dir, img_path))
+        for idx in range(len(calculated_boxes[0].keys())):
+            cat_id = list(calculated_boxes[0].keys())[idx]
+            boxes = calculated_boxes[0][cat_id]
             for box in boxes:
                 coco_annotations.append({
                     "id": int(annotation_id),
                     "image_id": int(img_id),
-                    "category_id": matching_dict[id],
+                    "category_id": cat_id,
                     "bbox": box,
                     "area": (box[2] - box[0]) * (box[3] - box[1]),
                     "iscrowd": 0,
@@ -173,12 +175,10 @@ def save_coco_json(coco_json, output_dir, mode):
         json.dump(coco_json, f)
 
 
-
-
 def main():
     parser = argparse.ArgumentParser(description='Generate COCO JSON file')
-    parser.add_argument('--root_dir', type=str, required=True, help='Root directory of the dataset')
-    parser.add_argument('--output_dir', type=str, required=True, help='Output directory for the COCO JSON file')
+    parser.add_argument('--root_dir', type=str, default = '/media/ailab/HDD1/Workspace/src/Project/Drone24/detection/drone-DELIVER/data/DELIVER', help='Root directory of the dataset')
+    parser.add_argument('--output_dir', type=str, default='/media/ailab/HDD1/Workspace/src/Project/Drone24/detection/drone-DELIVER/data/DELIVER', help='Output directory for the COCO JSON file')
     parser.add_argument('--mode', type=str, default='train', help='Mode of the dataset (train, val, test)')
     args = parser.parse_args()
     root_dir = args.root_dir
