@@ -92,7 +92,7 @@ def gen_img_list(root_dir, mode=['train', 'val', 'test']):
     img_lists = [os.path.relpath(img, root_dir) for img in img_lists]
     return img_lists
 
-def create_coco_json(root_dir, img_lists, mode):
+def create_coco_json(root_dir, img_lists, mode, box_type='xywh'):
     '''
     creates a coco json file from the image lists
     '''
@@ -141,11 +141,14 @@ def create_coco_json(root_dir, img_lists, mode):
             "event_path" : img_path.replace('img', 'event').replace('rgb_', 'event_'),
         })
         
-        calculated_boxes= mask_process(os.path.join(root_dir, img_path))
+        calculated_boxes= mask_process(os.path.join(root_dir, img_path))            
         for idx in range(len(calculated_boxes[0].keys())):
             cat_id = list(calculated_boxes[0].keys())[idx]
             boxes = calculated_boxes[0][cat_id]
+
             for box in boxes:
+                if box_type == 'xywh':
+                    box = [box[0], box[1], box[2] - box[0], box[3] - box[1]]
                 coco_annotations.append({
                     "id": int(annotation_id),
                     "image_id": int(img_id),
@@ -179,7 +182,7 @@ def main():
     parser = argparse.ArgumentParser(description='Generate COCO JSON file')
     parser.add_argument('--root_dir', type=str, default = '/media/ailab/HDD1/Workspace/src/Project/Drone24/detection/drone-DELIVER/data/DELIVER', help='Root directory of the dataset')
     parser.add_argument('--output_dir', type=str, default='/media/ailab/HDD1/Workspace/src/Project/Drone24/detection/drone-DELIVER/data/DELIVER', help='Output directory for the COCO JSON file')
-    parser.add_argument('--mode', type=str, default='train', help='Mode of the dataset (train, val, test)')
+    parser.add_argument('--mode', type=str, default='test', help='Mode of the dataset (train, val, test)')
     args = parser.parse_args()
     root_dir = args.root_dir
     output_dir = args.output_dir
@@ -187,10 +190,6 @@ def main():
     img_lists = gen_img_list(root_dir, mode)
     coco_json = create_coco_json(root_dir, img_lists, mode)
     save_coco_json(coco_json, output_dir, mode)
-
-
-
-
         
         # mask = cv2.imread(os.path.join(root_dir, 'semantic', img_path))
         # depth = cv2.imread(os.path.join(root_dir, 'depth', img_path))
@@ -210,8 +209,6 @@ def main():
         #             "image_width": width,   
 
     
-
-
 
 if __name__ == '__main__':
     # pth = '/media/ailab/HDD1/Workspace/src/Project/Drone24/detection/drone-DELIVER/data/DELIVER/semantic/night/train/MAP_6_point75/018100_semantic_front.png'
