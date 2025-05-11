@@ -142,7 +142,8 @@ class DELIVERCOCO(Dataset):
 
             target = {
                 'boxes': torch.tensor(transformed['bboxes'], dtype=torch.float32),
-                'labels': torch.tensor(transformed['labels'], dtype=torch.int64)
+                'labels': torch.tensor(transformed['labels'], dtype=torch.int64),
+                'image_id': torch.tensor(img_id, dtype=torch.int64)
             }
         
             return return_list, target

@@ -38,6 +38,9 @@ from semseg.optimizers import get_optimizer
 from semseg.utils.utils import fix_seeds, setup_cudnn, cleanup_ddp, setup_ddp, get_logger, cal_flops # print_iou removed
 # from val_mm import evaluate # evaluate function is for segmentation, needs replacement for detection
 
+
+
+
 # COCO Evaluation function
 def evaluate_detection(model, dataloader, device, coco_gt_path, logger_instance):
     logger_instance.info("Starting COCO evaluation...")
@@ -48,24 +51,16 @@ def evaluate_detection(model, dataloader, device, coco_gt_path, logger_instance)
 
     with torch.no_grad():
         for images, targets in tqdm(dataloader, desc="Evaluating"):
-            images = images.to(device)
-            # Targets are not directly used by model in eval mode for predictions,
-            # but image_id is needed from targets.
-            
-            outputs = model(images) # Model in eval mode returns list of dicts (boxes, labels, scores)
+            sample = [img.to(device) for img in images]                                                                      # images are already stacked by collate_fn
+            targets = [{k: v.to(device) if isinstance(v, torch.Tensor) else v for k, v in t.items()} for t in targets]       # targets is a list of dicts, each dict's tensors need to be moved to device
+            outputs = model(sample) # Model in eval mode returns list of dicts (boxes, labels, scores)
 
             for i, output in enumerate(outputs):
                 image_id = targets[i]['image_id'].item() # Get original image_id
                 img_ids_processed.append(image_id)
-
                 boxes = output['boxes'].cpu().numpy()
                 labels = output['labels'].cpu().numpy()
                 scores = output['scores'].cpu().numpy()
-
-                # Convert boxes from [x1, y1, x2, y2] to [x, y, width, height] for COCO
-                # And ensure they are within image boundaries if necessary (though COCOeval handles some clipping)
-                # boxes[:, 2] -= boxes[:, 0]
-                # boxes[:, 3] -= boxes[:, 1]
                 
                 for box_idx in range(boxes.shape[0]):
                     score = scores[box_idx]
@@ -74,36 +69,29 @@ def evaluate_detection(model, dataloader, device, coco_gt_path, logger_instance)
                     
                     label = labels[box_idx]
                     box = boxes[box_idx] # x1, y1, x2, y2
-
                     # COCO format: [x_min, y_min, width, height]
+
                     coco_box = [
                         box[0], 
                         box[1], 
                         box[2] - box[0], 
                         box[3] - box[1]
                     ]
-
                     coco_results.append({
                         'image_id': image_id,
                         'category_id': label,
-                        'bbox': [round(c, 2) for c in coco_box], # Round for smaller JSON
+                        'bbox': [round(c, 2) for c in box], # Round for smaller JSON
                         'score': round(float(score), 3)
                     })
-
     if not coco_results:
         logger_instance.warning("No detections found to evaluate.")
         return 0.0, {} # mAP, all_stats
-
     logger_instance.info(f"Generated {len(coco_results)} detections for {len(set(img_ids_processed))} images.")
-    
-    # Save detection results to a temporary JSON file for COCOeval
-    # For simplicity, save in current dir or a temp dir if available
+
     dt_results_path = Path('.') / 'tmp_coco_detection_results.json' 
     with open(dt_results_path, 'w') as f:
         json.dump(coco_results, f)
 
-    # Prepare ground truth: COCO API expects GT bboxes in XYWH format.
-    # If the provided coco_gt_path JSON has bboxes in XYXY, convert them.
     temp_gt_path = None
     try:
         with open(coco_gt_path, 'r') as f:
@@ -212,12 +200,6 @@ def main(cfg, gpu, save_dir):
     train_augs = get_train_augmentation(train_cfg['IMAGE_SIZE'], additional_targets=additional_targets_setup)
     val_augs = get_val_augmentation(eval_cfg['IMAGE_SIZE'], additional_targets=additional_targets_setup)
 
-
-    # Dataset
-    # DELIVERCOCO expects root, split, transform, modals.
-    # The coco_train.json and coco_val.json paths are implicitly handled by DELIVERCOCO based on the 'root' and 'split'.
-    # The 'root' should be the directory containing 'coco_train.json', 'coco_val.json', and image folders.
-    # e.g., if root is 'data/DELIVER', then annotations are 'data/DELIVER/coco_train.json' etc.
     trainset = DELIVERCOCO(root=dataset_cfg['ROOT'], split='train', transform=train_augs, modals=dataset_cfg['MODALS'], target_img_size = train_cfg['IMAGE_SIZE'])
     valset = DELIVERCOCO(root=dataset_cfg['ROOT'], split='val', transform=val_augs, modals=dataset_cfg['MODALS'],target_img_size = eval_cfg['IMAGE_SIZE'])
     
@@ -254,9 +236,6 @@ def main(cfg, gpu, save_dir):
     model = model.to(device)
     
     iters_per_epoch = len(trainset) // train_cfg['BATCH_SIZE'] // gpus
-    # Loss is internal to FasterRCNN when targets are provided
-    # loss_fn = get_loss(loss_cfg['NAME'], trainset.ignore_label, None) # Removed
-
     start_epoch = 0
     optimizer = get_optimizer(model, optim_cfg['NAME'], lr, optim_cfg['WEIGHT_DECAY'])
     # Scheduler might need adjustment based on detection training practices
@@ -281,8 +260,6 @@ def main(cfg, gpu, save_dir):
         # loss = resume_checkpoint.get('loss', 0) # Loss is a dict for FasterRCNN
         best_mAP = resume_checkpoint.get('best_mAP', 0.0) # Changed to best_mAP
         logger.info(f"Resumed training from epoch {start_epoch}, best_mAP: {best_mAP}")
-           
-
 
     def detection_collate_fn(batch):
         # batch = List[Tuple[List[Tensor], Dict]]
@@ -290,11 +267,6 @@ def main(cfg, gpu, save_dir):
         inputs, targets = zip(*batch)
         inputs_transposed = [torch.stack(mod_list, dim=0) for mod_list in zip(*inputs)]
         return inputs_transposed, list(targets)
-
-
-
-
-            
 
     trainloader = DataLoader(trainset, batch_size=train_cfg['BATCH_SIZE'], num_workers=num_workers, drop_last=True, pin_memory=True, sampler=sampler, collate_fn=detection_collate_fn)
     valloader = DataLoader(valset, batch_size=eval_cfg['BATCH_SIZE'], num_workers=num_workers, pin_memory=True, sampler=sampler_val, collate_fn=detection_collate_fn)
@@ -351,41 +323,41 @@ def main(cfg, gpu, save_dir):
         torch.cuda.empty_cache()
 
         # Evaluation
-        if ((epoch+1) % train_cfg.get('EVAL_INTERVAL', 1) == 0 and (epoch+1) > train_cfg.get('EVAL_START', 0)) or (epoch+1) == epochs:
-            if (not train_cfg.get('DDP', False) or torch.distributed.get_rank() == 0):
-                current_mAP, all_coco_stats = evaluate_detection(model.module if train_cfg.get('DDP', False) else model, 
-                                                                 valloader, 
-                                                                 device, 
-                                                                 coco_val_gt_path,
-                                                                 logger) # Pass the actual model and logger
-                writer.add_scalar('val/mAP', current_mAP, epoch)
-                for stat_name, stat_val in all_coco_stats.items():
-                    writer.add_scalar(f'val_coco_stats/{stat_name.replace(" ", "_")}', stat_val, epoch)
-                if current_mAP > best_mAP:
-                    # Clean up previous best checkpoint names
-                    prev_best_ckp_name = f"{model_cfg['NAME']}_{model_cfg['BACKBONE']}_{dataset_cfg['NAME']}_epoch{best_epoch}_{best_mAP:.4f}_checkpoint.pth"
-                    prev_best_name = f"{model_cfg['NAME']}_{model_cfg['BACKBONE']}_{dataset_cfg['NAME']}_epoch{best_epoch}_{best_mAP:.4f}.pth"
-                    prev_best_ckp_path = save_dir / prev_best_ckp_name
-                    prev_best_path = save_dir / prev_best_name
-                    if os.path.isfile(prev_best_path): os.remove(prev_best_path)
-                    if os.path.isfile(prev_best_ckp_path): os.remove(prev_best_ckp_path)
-                    best_mAP = current_mAP
-                    best_epoch = epoch+1
-                    cur_best_ckp_name = f"{model_cfg['NAME']}_{model_cfg['BACKBONE']}_{dataset_cfg['NAME']}_epoch{best_epoch}_{best_mAP:.4f}_checkpoint.pth"
-                    cur_best_name = f"{model_cfg['NAME']}_{model_cfg['BACKBONE']}_{dataset_cfg['NAME']}_epoch{best_epoch}_{best_mAP:.4f}.pth"
-                    torch.save(model.module.state_dict() if train_cfg.get('DDP', False) else model.state_dict(), save_dir / cur_best_name)
-                    torch.save({
-                        'epoch': best_epoch,
-                        'model_state_dict': model.module.state_dict() if train_cfg.get('DDP', False) else model.state_dict(),
-                        'optimizer_state_dict': optimizer.state_dict(),
-                        'scheduler_state_dict': scheduler.state_dict(),
-                        'best_mAP': best_mAP, # Changed to best_mAP
-                        # 'loss_dict': loss_dict # Can save last loss_dict if needed
-                    }, save_dir / cur_best_ckp_name)
-                    # Logging for detection would be different (e.g., mAP per class)
-                    # logger.info(print_iou(epoch, ious, miou, acc, macc, class_names)) # Removed segmentation specific logging
-                    logger.info(f"Epoch {epoch+1}: New best model saved with mAP: {best_mAP:.4f}")
-                logger.info(f"Current epoch:{epoch+1} mAP: {current_mAP:.4f} Best mAP: {best_mAP:.4f}") # Changed "Placeholder mAP" to "mAP"
+        if ((epoch+1) % train_cfg.get('EVAL_INTERVAL', 1) == 0) or (epoch+1) == epochs:
+            # if (not train_cfg.get('DDP', False) or torch.distributed.get_rank() == 0):
+            current_mAP, all_coco_stats = evaluate_detection(model.module if train_cfg.get('DDP', False) else model, 
+                                                                valloader, 
+                                                                device, 
+                                                                coco_val_gt_path,
+                                                                logger) # Pass the actual model and logger
+            writer.add_scalar('val/mAP', current_mAP, epoch)
+            for stat_name, stat_val in all_coco_stats.items():
+                writer.add_scalar(f'val_coco_stats/{stat_name.replace(" ", "_")}', stat_val, epoch)
+            if current_mAP > best_mAP:
+                # Clean up previous best checkpoint names
+                prev_best_ckp_name = f"{model_cfg['NAME']}_{model_cfg['BACKBONE']}_{dataset_cfg['NAME']}_epoch{best_epoch}_{best_mAP:.4f}_checkpoint.pth"
+                prev_best_name = f"{model_cfg['NAME']}_{model_cfg['BACKBONE']}_{dataset_cfg['NAME']}_epoch{best_epoch}_{best_mAP:.4f}.pth"
+                prev_best_ckp_path = save_dir / prev_best_ckp_name
+                prev_best_path = save_dir / prev_best_name
+                if os.path.isfile(prev_best_path): os.remove(prev_best_path)
+                if os.path.isfile(prev_best_ckp_path): os.remove(prev_best_ckp_path)
+                best_mAP = current_mAP
+                best_epoch = epoch+1
+                cur_best_ckp_name = f"{model_cfg['NAME']}_{model_cfg['BACKBONE']}_{dataset_cfg['NAME']}_epoch{best_epoch}_{best_mAP:.4f}_checkpoint.pth"
+                cur_best_name = f"{model_cfg['NAME']}_{model_cfg['BACKBONE']}_{dataset_cfg['NAME']}_epoch{best_epoch}_{best_mAP:.4f}.pth"
+                torch.save(model.module.state_dict() if train_cfg.get('DDP', False) else model.state_dict(), save_dir / cur_best_name)
+                torch.save({
+                    'epoch': best_epoch,
+                    'model_state_dict': model.module.state_dict() if train_cfg.get('DDP', False) else model.state_dict(),
+                    'optimizer_state_dict': optimizer.state_dict(),
+                    'scheduler_state_dict': scheduler.state_dict(),
+                    'best_mAP': best_mAP, # Changed to best_mAP
+                    # 'loss_dict': loss_dict # Can save last loss_dict if needed
+                }, save_dir / cur_best_ckp_name)
+                # Logging for detection would be different (e.g., mAP per class)
+                # logger.info(print_iou(epoch, ious, miou, acc, macc, class_names)) # Removed segmentation specific logging
+                logger.info(f"Epoch {epoch+1}: New best model saved with mAP: {best_mAP:.4f}")
+            logger.info(f"Current epoch:{epoch+1} mAP: {current_mAP:.4f} Best mAP: {best_mAP:.4f}") # Changed "Placeholder mAP" to "mAP"
 
     if (not train_cfg.get('DDP', False) or torch.distributed.get_rank() == 0):
         writer.close()

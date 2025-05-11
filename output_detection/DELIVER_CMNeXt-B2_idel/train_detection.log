@@ -1,7 +1,7 @@
-20250511 02:39:17 - root - INFO: - Saving results to output_detection/DELIVER_CMNeXt-B2_idel
-20250511 02:39:18 - root - INFO: - Attempting to load pretrained weights for backbone from: checkpoints/pretrained/segformer/mit_b2.pth
-20250511 02:39:20 - root - INFO: - ================== model structure =====================
-20250511 02:39:20 - root - INFO: - CMNeXtFasterRCNN(
+20250512 03:22:12 - root - INFO: - Saving results to output_detection/DELIVER_CMNeXt-B2_idel
+20250512 03:22:13 - root - INFO: - Attempting to load pretrained weights for backbone from: checkpoints/pretrained/segformer/mit_b2.pth
+20250512 03:22:15 - root - INFO: - ================== model structure =====================
+20250512 03:22:15 - root - INFO: - CMNeXtFasterRCNN(
   (transform): GeneralizedRCNNTransform(
       Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])
       Resize(min_size=(800,), max_size=1333, mode='bilinear')
@@ -1125,5 +1125,5 @@
     )
   )
 )
-20250511 02:39:20 - root - INFO: - ================== training config =====================
-20250511 02:39:20 - root - INFO: - {'DEVICE': 'cuda', 'SAVE_DIR': 'output', 'MODEL': {'NAME': 'CMNeXt', 'BACKBONE': 'CMNeXt-B2', 'PRETRAINED': 'checkpoints/pretrained/segformer/mit_b2.pth', 'RESUME': ''}, 'DATASET': {'NAME': 'DELIVER', 'ROOT': 'data/DELIVER', 'IGNORE_LABEL': 255, 'MODALS': ['image', 'depth', 'event', 'lidar']}, 'TRAIN': {'IMAGE_SIZE': [512, 512], 'BATCH_SIZE': 2, 'EPOCHS': 200, 'EVAL_START': 100, 'EVAL_INTERVAL': 1, 'AMP': False, 'DDP': False}, 'LOSS': {'NAME': 'OhemCrossEntropy', 'CLS_WEIGHTS': False}, 'OPTIMIZER': {'NAME': 'adamw', 'LR': 6e-05, 'WEIGHT_DECAY': 0.01}, 'SCHEDULER': {'NAME': 'warmuppolylr', 'POWER': 0.9, 'WARMUP': 10, 'WARMUP_RATIO': 0.1}, 'EVAL': {'MODEL_PATH': 'output/DELIVER/cmnext_b2_deliver_rgbdel.pth', 'IMAGE_SIZE': [125, 125], 'BATCH_SIZE': 1, 'MSF': {'ENABLE': False, 'FLIP': True, 'SCALES': [0.5, 0.75, 1.0, 1.25, 1.5, 1.75]}}, 'TEST': {'MODEL_PATH': 'output/DELIVER/cmnext_b2_deliver_rgbdel.pth', 'FILE': 'data/DELIVER', 'IMAGE_SIZE': [125, 125], 'OVERLAY': True}}
+20250512 03:22:15 - root - INFO: - ================== training config =====================
+20250512 03:22:15 - root - INFO: - {'DEVICE': 'cuda', 'SAVE_DIR': 'output', 'MODEL': {'NAME': 'CMNeXt', 'BACKBONE': 'CMNeXt-B2', 'PRETRAINED': 'checkpoints/pretrained/segformer/mit_b2.pth', 'RESUME': ''}, 'DATASET': {'NAME': 'DELIVER', 'ROOT': 'data/DELIVER', 'IGNORE_LABEL': 255, 'MODALS': ['image', 'depth', 'event', 'lidar']}, 'TRAIN': {'IMAGE_SIZE': [512, 512], 'BATCH_SIZE': 2, 'EPOCHS': 200, 'EVAL_START': 100, 'EVAL_INTERVAL': 1, 'AMP': False, 'DDP': False}, 'LOSS': {'NAME': 'OhemCrossEntropy', 'CLS_WEIGHTS': False}, 'OPTIMIZER': {'NAME': 'adamw', 'LR': 6e-05, 'WEIGHT_DECAY': 0.01}, 'SCHEDULER': {'NAME': 'warmuppolylr', 'POWER': 0.9, 'WARMUP': 10, 'WARMUP_RATIO': 0.1}, 'EVAL': {'MODEL_PATH': 'output/DELIVER/cmnext_b2_deliver_rgbdel.pth', 'IMAGE_SIZE': [512, 512], 'BATCH_SIZE': 1, 'MSF': {'ENABLE': False, 'FLIP': True, 'SCALES': [0.5, 0.75, 1.0, 1.25, 1.5, 1.75]}}, 'TEST': {'MODEL_PATH': 'output/DELIVER/cmnext_b2_deliver_rgbdel.pth', 'FILE': 'data/DELIVER', 'IMAGE_SIZE': [512, 512], 'OVERLAY': True}}
