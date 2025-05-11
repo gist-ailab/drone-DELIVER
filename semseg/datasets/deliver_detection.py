@@ -1,0 +1,246 @@
+import os
+import torch
+import numpy as np
+from torch.utils.data import Dataset
+# torchvision.transforms.functional is no longer directly needed here for main transforms
+# from torchvision import io # Replaced by PIL or OpenCV for image loading
+from PIL import Image # Using PIL for image loading
+import cv2 # OpenCV can also be used, PIL is often simpler for basic loading
+import torchvision.transforms.functional as TF 
+
+from pathlib import Path
+from typing import Tuple, List, Dict, Union # Added Dict, Union
+# import glob # Not used
+# import einops # Not used
+from torch.utils.data import DataLoader
+# from torch.utils.data import DistributedSampler, RandomSampler # Not used in this file's __main__
+# Import albumentations-based augmentations
+from semseg.augmentations_detection_mm2 import get_train_augmentation, get_val_augmentation
+import json
+
+def coco_bbox_to_pascal_voc(bbox):
+    """Converts COCO bbox [x, y, w, h] to Pascal VOC [xmin, ymin, xmax, ymax]."""
+    return [bbox[0], bbox[1], bbox[0] + bbox[2], bbox[1] + bbox[3]]
+
+class DELIVERCOCO(Dataset):
+    """
+    DELIVER Dataset for Object Detection, compatible with COCO format annotations.
+    Uses Albumentations for transformations.
+    """
+    CLASSES = ["Human", "Car"] # Example, adjust if different based on coco.json categories
+
+    def __init__(self, root: str = 'data/DELIVER', split: str = 'train', 
+                 transform=None, modals: List[str] = ['img'], case: str = None,
+                 target_img_size: Union[int, Tuple[int, int]] = (1024, 1024)):
+        super().__init__()
+        assert split in ['train', 'val', 'test']
+        self.root = Path(root)
+        self.split = split
+        self.modals = modals # e.g., ['img', 'depth']
+        self.case = case # Could be used to select sub-folders or specific conditions
+        self.target_img_size = target_img_size # Used for get_val_augmentation
+
+        # Initialize augmentations if not provided (e.g., for train/val splits)
+        if transform is None:
+            additional_targets_setup = {}
+            if split == 'train':
+                self.transform = get_train_augmentation(self.target_img_size, additional_targets=additional_targets_setup)
+            else: # val or test
+                self.transform = get_val_augmentation(self.target_img_size, additional_targets=additional_targets_setup)
+        else:
+            self.transform = transform
+
+
+        ann_path = self.root / f'coco_{split}.json'
+        with open(ann_path, 'r') as f:
+            coco_data = json.load(f)
+
+        self.image_id_to_filename = {img_info['id']: img_info['file_name'] for img_info in coco_data['images']}
+        self.img_ids = list(self.image_id_to_filename.keys())
+        
+        # Update CLASSES from coco_data if available and consistent
+        if 'categories' in coco_data:
+            # Assuming category IDs are 1-indexed and map sequentially to class names
+            # Or use a direct mapping if IDs are not sequential or 0-indexed
+            self.CLASSES = [cat['name'] for cat in sorted(coco_data['categories'], key=lambda x: x['id'])]
+
+        self.annotations = {}
+        for ann in coco_data['annotations']:
+            if ann.get('iscrowd', 0): # Handle missing 'iscrowd' key, default to not crowd
+                continue
+            img_id = ann['image_id']
+            if img_id not in self.annotations:
+                self.annotations[img_id] = []
+            self.annotations[img_id].append(ann)
+
+        print(f"Loaded {len(self.img_ids)} images for {split} split from {self.root}")
+        print(f"Dataset classes: {self.CLASSES}")
+
+
+    def __len__(self):
+        return len(self.img_ids)
+    
+    def _open_img(self, file):
+        # Using PIL to open images
+        img = np.array(Image.open(file))
+        if img.ndim == 2:
+            img = np.stack([img] * 3, axis=-1)  # Convert grayscale to RGB
+        elif img.shape[-1] == 4:
+            img = img[..., :3]  # Discard alpha channel if present
+
+        # all image is shape (H, W, C)
+        return img
+
+    def __getitem__(self, idx: int) -> Tuple[torch.Tensor, Dict[str, torch.Tensor]]:
+        img_id = self.img_ids[idx]
+        file_name = self.image_id_to_filename[img_id] # e.g., "rgb/image_0001.png"
+
+        rgb = os.path.join(self.root,file_name)
+        x1 = rgb.replace('/img', '/hha').replace('_rgb', '_depth')
+        x2 = rgb.replace('/img', '/lidar').replace('_rgb', '_lidar')
+        x3 = rgb.replace('/img', '/event').replace('_rgb', '_event')
+
+        sample = {}
+        sample['image'] = self._open_img(rgb)  # e.g., (H, W, 3)
+        H, W = sample['image'].shape[:2]
+
+        if 'depth' in self.modals:
+            dimg = self._open_img(x1)
+            sample['depth'] = cv2.resize(dimg, (W, H), interpolation=cv2.INTER_NEAREST)
+
+        if 'lidar' in self.modals:
+            limg = self._open_img(x2)
+            sample['lidar'] = cv2.resize(limg, (W, H), interpolation=cv2.INTER_NEAREST)
+
+        if 'event' in self.modals:
+            eimg = self._open_img(x3)
+            sample['event'] = cv2.resize(eimg, (W, H), interpolation=cv2.INTER_NEAREST)
+
+        # --- Load Annotations ---
+        anns = self.annotations.get(img_id, [])
+        bboxes_coco = [] # List of [x, y, w, h]
+        labels_list = []
+
+        anns = self.annotations.get(img_id, [])
+        bboxes_coco = [ann['bbox'] for ann in anns]
+        labels_list = [ann['category_id'] for ann in anns]
+
+        sample['bboxes'] = bboxes_coco
+        sample['labels'] = labels_list
+
+        if self.transform:
+            transformed = self.transform(**sample)
+            sample['image'] = transformed['image']
+            if 'depth' in self.modals:
+                sample['depth'] = transformed['depth']
+            if 'lidar' in self.modals:      
+                sample['lidar'] = transformed['lidar']
+            if 'event' in self.modals:
+                sample['event'] = transformed['event']
+
+            return_list = [sample[k] for k in self.modals]
+
+            target = {
+                'boxes': torch.tensor(transformed['bboxes'], dtype=torch.float32),
+                'labels': torch.tensor(transformed['labels'], dtype=torch.int64)
+            }
+        
+            return return_list, target
+        else:
+            # 변환이 없는 경우 처리
+            assert False, "Transform is None, but no transform was provided in __init__."
+
+
+
+
+
+
+if __name__ == '__main__':
+    # Example: Define target size for augmentations
+    # For training, RandomResizedCrop will use this as output H, W
+    train_target_size = (512, 512) 
+    
+    # For validation, we need to determine the H,W for A.Resize.
+    # If we want to mimic the original "scale short edge then make divisible by 32",
+    # that logic needs an actual image's H,W.
+    # For this __main__ example, let's assume a fixed validation size or calculate based on a typical image.
+    # A typical original image size (e.g. from your data)
+    example_orig_h, example_orig_w = 1080, 1920 
+    val_short_edge_target = 512 # Target for the shorter edge before making divisible by 32
+    
+    # Calculate final H,W for validation resize based on the original logic
+    # This is what the get_val_augmentation in augmentations_detection_mm.py expects if size is a tuple
+    val_target_h, val_target_w = _calculate_resize_dims(example_orig_h, example_orig_w, val_short_edge_target)
+    print(f"Using validation target H,W: ({val_target_h}, {val_target_w}) for A.Resize")
+
+    # Define which modalities are used and how they map in albumentations
+    # (e.g. 'depth' is treated like an 'image' for geometric transforms)
+    active_modals = ['img'] # Add 'depth' etc. if you have them: ['img', 'depth']
+    additional_targets_setup = {}
+    if 'depth' in active_modals:
+        additional_targets_setup['depth'] = 'image'
+    if 'lidar' in active_modals:
+        additional_targets_setup['lidar'] = 'image'
+    if 'event' in active_modals:
+        additional_targets_setup['event'] = 'image'
+    # If you have other modals, add them similarly
+
+
+    # Get augmentation pipelines
+    train_augs = get_train_augmentation(train_target_size, additional_targets=additional_targets_setup)
+    val_augs = get_val_augmentation((val_target_h, val_target_w), additional_targets=additional_targets_setup)
+
+    # Create Datasets
+    # The `target_img_size` in DELIVERCOCO is now mainly for fallback or if transform=None.
+    # The actual augmentation sizes are passed to get_train/val_augmentation.
+    train_dataset = DELIVERCOCO(root='data/DELIVER', split='train', transform=train_augs, modals=active_modals)
+    val_dataset = DELIVERCOCO(root='data/DELIVER', split='val', transform=val_augs, modals=active_modals)
+
+    if len(train_dataset) > 0:
+        train_loader = DataLoader(train_dataset, batch_size=2, shuffle=True, num_workers=2, collate_fn=lambda batch: tuple(zip(*batch)))
+        print(f"\nTesting Dataloader for TRAIN split (first batch):")
+        for i, (images, targets) in enumerate(train_loader):
+            print(f"Batch {i+1}:")
+            print(f"  Images type: {type(images)}, len: {len(images)}")
+            print(f"  Image 0 shape: {images[0].shape}, dtype: {images[0].dtype}")
+            print(f"  Targets type: {type(targets)}, len: {len(targets)}")
+            print(f"  Target 0: {targets[0]}")
+            if 'depth' in active_modals and 'depth' in targets[0]:
+                 print(f"  Target 0 depth shape: {targets[0]['depth'].shape}, dtype: {targets[0]['depth'].dtype}")
+            break 
+    else:
+        print("Train dataset is empty. Skipping Dataloader test for TRAIN.")
+
+    if len(val_dataset) > 0:
+        val_loader = DataLoader(val_dataset, batch_size=2, shuffle=False, num_workers=2, collate_fn=lambda batch: tuple(zip(*batch)))
+        print(f"\nTesting Dataloader for VAL split (first batch):")
+        for i, (images, targets) in enumerate(val_loader):
+            print(f"Batch {i+1}:")
+            print(f"  Images type: {type(images)}, len: {len(images)}")
+            print(f"  Image 0 shape: {images[0].shape}, dtype: {images[0].dtype}")
+            print(f"  Targets type: {type(targets)}, len: {len(targets)}")
+            print(f"  Target 0: {targets[0]}")
+            if 'depth' in active_modals and 'depth' in targets[0]:
+                 print(f"  Target 0 depth shape: {targets[0]['depth'].shape}, dtype: {targets[0]['depth'].dtype}")
+            break
+    else:
+        print("Validation dataset is empty. Skipping Dataloader test for VAL.")
+
+    # Example of iterating through one sample to check output
+    if len(train_dataset) > 0:
+        print("\nChecking a single sample from train_dataset:")
+        img_tensor, target_dict = train_dataset[0]
+        print(f"  Image tensor shape: {img_tensor.shape}, dtype: {img_tensor.dtype}")
+        print(f"  Target dict: {{")
+        for k, v in target_dict.items():
+            if isinstance(v, torch.Tensor):
+                print(f"    '{k}': shape={v.shape}, dtype={v.dtype}")
+            else:
+                print(f"    '{k}': {v}")
+        print(f"  }}")
+        print(f"  Image tensor min: {img_tensor.min()}, max: {img_tensor.max()}")
+        if 'depth' in active_modals and 'depth' in target_dict:
+            print(f"  Depth tensor min: {target_dict['depth'].min()}, max: {target_dict['depth'].max()}")
+
+    else:
+        print("Train dataset is empty, cannot check a single sample.")

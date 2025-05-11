@@ -1,4 +1,5 @@
 from .deliver import DELIVER
+from .deliver_detection import DELIVERCOCO
 from .kitti360 import KITTI360
 from .nyu import NYU
 from .mfnet import MFNet
@@ -11,5 +12,6 @@ __all__ = [
     'NYU',
     'MFNet',
     'UrbanLF',
-    'MCubeS'
+    'MCubeS',
+    'DELIVERCOCO'
 ]

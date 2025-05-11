@@ -1,4 +1,10 @@
+
+
 import os
+import sys
+project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))
+if project_root not in sys.path:
+    sys.path.insert(0, project_root)
 import torch 
 import argparse
 import yaml
@@ -30,11 +36,14 @@ def main(cfg, gpu, save_dir):
     num_workers = 8
     device = torch.device(cfg['DEVICE'])
     train_cfg, eval_cfg = cfg['TRAIN'], cfg['EVAL']
+    print(train_cfg)
     dataset_cfg, model_cfg = cfg['DATASET'], cfg['MODEL']
     loss_cfg, optim_cfg, sched_cfg = cfg['LOSS'], cfg['OPTIMIZER'], cfg['SCHEDULER']
     epochs, lr = train_cfg['EPOCHS'], optim_cfg['LR']
     resume_path = cfg['MODEL']['RESUME']
-    gpus = int(os.environ['WORLD_SIZE'])
+    # gpus = int(os.environ['WORLD_SIZE'])
+    gpus = int(os.environ.get('WORLD_SIZE', 1))
+
 
     traintransform = get_train_augmentation(train_cfg['IMAGE_SIZE'], seg_fill=dataset_cfg['IGNORE_LABEL'])
     valtransform = get_val_augmentation(eval_cfg['IMAGE_SIZE'])
@@ -61,7 +70,9 @@ def main(cfg, gpu, save_dir):
     scheduler = get_scheduler(sched_cfg['NAME'], optimizer, int((epochs+1)*iters_per_epoch), sched_cfg['POWER'], iters_per_epoch * sched_cfg['WARMUP'], sched_cfg['WARMUP_RATIO'])
 
     if train_cfg['DDP']: 
+        # sampler = DistributedSampler(trainset, dist.get_world_size(), dist.get_rank(), shuffle=True)
         sampler = DistributedSampler(trainset, dist.get_world_size(), dist.get_rank(), shuffle=True)
+
         sampler_val = None
         model = DDP(model, device_ids=[gpu], output_device=0, find_unused_parameters=True)
     else:

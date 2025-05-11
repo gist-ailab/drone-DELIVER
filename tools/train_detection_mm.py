@@ -1,0 +1,518 @@
+import sys
+import os
+# Add the project root directory to sys.path
+project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))
+if project_root not in sys.path:
+    sys.path.insert(0, project_root)
+
+import torch
+import argparse
+import yaml
+import time
+import multiprocessing as mp
+from tabulate import tabulate
+from tqdm import tqdm
+from torch.utils.data import DataLoader
+from pathlib import Path
+from torch.utils.tensorboard import SummaryWriter
+from torch.cuda.amp import GradScaler, autocast
+from torch.nn.parallel import DistributedDataParallel as DDP
+from torch.utils.data import DistributedSampler, RandomSampler
+from torch import distributed as dist
+from pycocotools.coco import COCO
+from pycocotools.cocoeval import COCOeval
+import numpy as np
+import json
+
+# Detection specific imports
+from semseg.models.cmnext_detection import CMNeXtFasterRCNN # Adjusted import
+from semseg.datasets.deliver_detection import DELIVERCOCO # Adjusted import
+
+from semseg.augmentations_detection_mm2 import get_train_augmentation, get_val_augmentation
+from semseg.losses import get_loss # Loss is handled by FasterRCNN
+from semseg.schedulers import get_scheduler # Re-evaluate if needed for detection
+from semseg.optimizers import get_optimizer # Re-evaluate if needed for detection
+from semseg.schedulers import get_scheduler
+from semseg.optimizers import get_optimizer
+
+from semseg.utils.utils import fix_seeds, setup_cudnn, cleanup_ddp, setup_ddp, get_logger, cal_flops # print_iou removed
+# from val_mm import evaluate # evaluate function is for segmentation, needs replacement for detection
+
+# COCO Evaluation function
+def evaluate_detection(model, dataloader, device, coco_gt_path, logger_instance):
+    logger_instance.info("Starting COCO evaluation...")
+    model.eval()
+    
+    coco_results = []
+    img_ids_processed = []
+
+    with torch.no_grad():
+        for images, targets in tqdm(dataloader, desc="Evaluating"):
+            images = images.to(device)
+            # Targets are not directly used by model in eval mode for predictions,
+            # but image_id is needed from targets.
+            
+            outputs = model(images) # Model in eval mode returns list of dicts (boxes, labels, scores)
+
+            for i, output in enumerate(outputs):
+                image_id = targets[i]['image_id'].item() # Get original image_id
+                img_ids_processed.append(image_id)
+
+                boxes = output['boxes'].cpu().numpy()
+                labels = output['labels'].cpu().numpy()
+                scores = output['scores'].cpu().numpy()
+
+                # Convert boxes from [x1, y1, x2, y2] to [x, y, width, height] for COCO
+                # And ensure they are within image boundaries if necessary (though COCOeval handles some clipping)
+                # boxes[:, 2] -= boxes[:, 0]
+                # boxes[:, 3] -= boxes[:, 1]
+                
+                for box_idx in range(boxes.shape[0]):
+                    score = scores[box_idx]
+                    if score < 0.05: # Confidence threshold, can be configured
+                        continue
+                    
+                    label = labels[box_idx]
+                    box = boxes[box_idx] # x1, y1, x2, y2
+
+                    # COCO format: [x_min, y_min, width, height]
+                    coco_box = [
+                        box[0], 
+                        box[1], 
+                        box[2] - box[0], 
+                        box[3] - box[1]
+                    ]
+
+                    coco_results.append({
+                        'image_id': image_id,
+                        'category_id': label,
+                        'bbox': [round(c, 2) for c in coco_box], # Round for smaller JSON
+                        'score': round(float(score), 3)
+                    })
+
+    if not coco_results:
+        logger_instance.warning("No detections found to evaluate.")
+        return 0.0, {} # mAP, all_stats
+
+    logger_instance.info(f"Generated {len(coco_results)} detections for {len(set(img_ids_processed))} images.")
+    
+    # Save detection results to a temporary JSON file for COCOeval
+    # For simplicity, save in current dir or a temp dir if available
+    dt_results_path = Path('.') / 'tmp_coco_detection_results.json' 
+    with open(dt_results_path, 'w') as f:
+        json.dump(coco_results, f)
+
+    # Prepare ground truth: COCO API expects GT bboxes in XYWH format.
+    # If the provided coco_gt_path JSON has bboxes in XYXY, convert them.
+    temp_gt_path = None
+    try:
+        with open(coco_gt_path, 'r') as f:
+            gt_data = json.load(f)
+
+        # Check if conversion is needed by inspecting a sample bbox, if annotations exist
+        needs_conversion = False
+        if gt_data.get('annotations') and len(gt_data['annotations']) > 0:
+            # Assuming if one is xyxy, all are. This is a heuristic.
+            # A more robust check might involve looking at image sizes vs bbox coordinates.
+            # For xyxy: x2 > x1 and y2 > y1. For xywh: width > 0 and height > 0.
+            # If x2 (interpreted as width) is larger than image width, it's likely xyxy.
+            # For now, we rely on the user's statement that their GT is XYXY.
+            # Let's assume conversion is always needed if this path is taken.
+            # A simple check: if a 'width' value (bbox[2]) is very large, it might be x2.
+            # This is not perfectly robust. The user has confirmed their GT is XYXY.
+            # Convert GT annotations from XYXY to XYWH for COCO tool
+            converted_annotations = []
+            for ann in gt_data['annotations']:
+                bbox_xyxy = ann['bbox']
+                x1, y1, x2, y2 = bbox_xyxy
+                bbox_xywh = [x1, y1, x2 - x1, y2 - y1]
+                # Ensure width and height are positive
+                if bbox_xywh[2] < 0: bbox_xywh[2] = 0
+                if bbox_xywh[3] < 0: bbox_xywh[3] = 0
+                
+                new_ann = ann.copy()
+                new_ann['bbox'] = bbox_xywh
+                converted_annotations.append(new_ann)
+            
+            gt_data_converted = gt_data.copy()
+            gt_data_converted['annotations'] = converted_annotations
+            
+            temp_gt_path = Path('.') / 'tmp_coco_gt_xywh.json'
+            with open(temp_gt_path, 'w') as f:
+                json.dump(gt_data_converted, f)
+            
+            final_gt_path_for_coco_tool = str(temp_gt_path)
+            logger_instance.info(f"Converted ground truth annotations from XYXY to XYWH, saved to temporary file: {temp_gt_path}")
+        else:
+            # No annotations in GT file, or file format issue, use original path
+            final_gt_path_for_coco_tool = coco_gt_path
+            logger_instance.info("Using original ground truth file (assuming XYWH or no annotations to convert).")
+
+        coco_gt = COCO(final_gt_path_for_coco_tool)
+        coco_dt = coco_gt.loadRes(str(dt_results_path)) # Load detection results
+
+        coco_eval = COCOeval(coco_gt, coco_dt, 'bbox') # Use 'bbox' for bounding box evaluation
+        # coco_eval.params.imgIds = img_ids_processed # Optional: evaluate only on images present in results
+        coco_eval.evaluate()
+        coco_eval.accumulate()
+        coco_eval.summarize() # This prints the summary to stdout by default
+        
+        # Capture the summary string if needed (pycocotools prints directly)
+        # Redirect stdout temporarily if you want to capture COCOeval's printed summary
+        
+        # stats is a numpy array with 12 numbers (mAP [IoU=0.50:0.95], AP50, AP75, etc.)
+        stats = coco_eval.stats
+        mAP = stats[0] # AP @ IoU=0.50:0.95 | area=all | maxDets=100
+        mAP50 = stats[1] # AP @ IoU=0.50
+        
+        all_stats_dict = {
+            "mAP": mAP,
+            "mAP@.50": mAP50,
+            "mAP@.75": stats[2],
+            "mAP (small)": stats[3],
+            "mAP (medium)": stats[4],
+            "mAP (large)": stats[5],
+            "AR@1": stats[6],
+            "AR@10": stats[7],
+            "AR@100": stats[8],
+            "AR (small)": stats[9],
+            "AR (medium)": stats[10],
+            "AR (large)": stats[11],
+        }
+        logger_instance.info(f"COCO Evaluation Summary: mAP={mAP:.4f}, mAP@.50={mAP50:.4f}")
+        for k, v in all_stats_dict.items():
+            logger_instance.info(f"  {k}: {v:.4f}")
+
+    except Exception as e:
+        logger_instance.error(f"Error during COCO evaluation: {e}")
+        import traceback
+        logger_instance.error(traceback.format_exc())
+        mAP = 0.0
+        all_stats_dict = {}
+    finally:
+        if os.path.exists(dt_results_path):
+            os.remove(dt_results_path) # Clean up temporary detection results file
+        if temp_gt_path and os.path.exists(temp_gt_path):
+            os.remove(temp_gt_path) # Clean up temporary converted GT file
+
+    return mAP, all_stats_dict
+
+
+def main(cfg, gpu, save_dir):
+    start = time.time()
+    best_mAP = 0.0 # Changed from best_mIoU to best_mAP
+    best_epoch = 0
+    num_workers = cfg['TRAIN'].get('NUM_WORKERS', 8) # Get from cfg or default
+    device = torch.device(cfg['DEVICE'])
+    train_cfg, eval_cfg = cfg['TRAIN'], cfg['EVAL']
+    dataset_cfg, model_cfg = cfg['DATASET'], cfg['MODEL']
+    optim_cfg, sched_cfg = cfg['OPTIMIZER'], cfg['SCHEDULER'] # Loss_cfg removed
+    epochs, lr = train_cfg['EPOCHS'], optim_cfg['LR']
+    resume_path = cfg['MODEL'].get('RESUME', None) # Use .get for safer access
+    gpus = int(os.environ.get('WORLD_SIZE', 1))
+
+    # # Augmentations - Assuming these are suitable for detection or will be adapted
+    # traintransform = get_train_augmentation(train_cfg['IMAGE_SIZE'], ) # seg_fill removed
+    # valtransform = get_val_augmentation(eval_cfg['IMAGE_SIZE'])
+
+    active_modals = dataset_cfg['MODALS']
+    
+    additional_targets_setup = {}
+    if 'depth' in active_modals:
+        additional_targets_setup['depth'] = 'image'
+    if 'event' in active_modals:
+        additional_targets_setup['event'] = 'image'
+    if 'lidar' in active_modals:
+        additional_targets_setup['lidar'] = 'image'
+    train_augs = get_train_augmentation(train_cfg['IMAGE_SIZE'], additional_targets=additional_targets_setup)
+    val_augs = get_val_augmentation(eval_cfg['IMAGE_SIZE'], additional_targets=additional_targets_setup)
+
+
+    # Dataset
+    # DELIVERCOCO expects root, split, transform, modals.
+    # The coco_train.json and coco_val.json paths are implicitly handled by DELIVERCOCO based on the 'root' and 'split'.
+    # The 'root' should be the directory containing 'coco_train.json', 'coco_val.json', and image folders.
+    # e.g., if root is 'data/DELIVER', then annotations are 'data/DELIVER/coco_train.json' etc.
+    trainset = DELIVERCOCO(root=dataset_cfg['ROOT'], split='train', transform=train_augs, modals=dataset_cfg['MODALS'], target_img_size = train_cfg['IMAGE_SIZE'])
+    valset = DELIVERCOCO(root=dataset_cfg['ROOT'], split='val', transform=val_augs, modals=dataset_cfg['MODALS'],target_img_size = eval_cfg['IMAGE_SIZE'])
+    
+    # Path to the ground truth COCO annotation file for validation
+    coco_val_gt_path = os.path.join(dataset_cfg['ROOT'], 'coco_val.json')
+
+    # num_classes for detection model should come from dataset_cfg or be explicit
+    num_detection_classes = len(trainset.CLASSES) 
+    class_names = trainset.CLASSES # For logging/evaluation
+
+    # Model
+    # CMNeXtFasterRCNN expects backbone_name, num_classes, modals
+    model = CMNeXtFasterRCNN(backbone_name=model_cfg['BACKBONE'], num_classes=num_detection_classes, modals=dataset_cfg['MODALS'])
+    
+    resume_checkpoint = None
+    if resume_path and os.path.isfile(resume_path):
+        resume_checkpoint = torch.load(resume_path, map_location=torch.device('cpu'))
+        # For FasterRCNN, the state dict might be nested under 'model' if saved directly from the FasterRCNN instance
+        # or could be the direct state_dict. Adjust as per how checkpoints are saved.
+        # Assuming the checkpoint saves the state_dict of CMNeXtFasterRCNN directly.
+        msg = model.load_state_dict(resume_checkpoint['model_state_dict'])
+        logger.info(f"Resumed model from: {resume_path}, msg: {msg}")
+    else:
+        # init_pretrained for CMNeXtFasterRCNN might need to be called on its backbone component
+        # or the CMNeXtFasterRCNN class should handle it.
+        # The provided CMNeXtFasterRCNN doesn't show an init_pretrained method directly.
+        # Assuming backbone pretraining is handled within CMNeXtBackbone or needs manual loading.
+        if model_cfg.get('PRETRAINED'):
+            logger.info(f"Attempting to load pretrained weights for backbone from: {model_cfg['PRETRAINED']}")
+            # This part is conceptual. Actual loading depends on CMNeXtFasterRCNN's design.
+            # model.backbone.init_pretrained(model_cfg['PRETRAINED']) # If backbone has this method
+            # Or, load and adapt state_dict manually if needed.
+            pass # Placeholder for pretrain logic
+    model = model.to(device)
+    
+    iters_per_epoch = len(trainset) // train_cfg['BATCH_SIZE'] // gpus
+    # Loss is internal to FasterRCNN when targets are provided
+    # loss_fn = get_loss(loss_cfg['NAME'], trainset.ignore_label, None) # Removed
+
+    start_epoch = 0
+    optimizer = get_optimizer(model, optim_cfg['NAME'], lr, optim_cfg['WEIGHT_DECAY'])
+    # Scheduler might need adjustment based on detection training practices
+    scheduler = get_scheduler(sched_cfg['NAME'], optimizer, int((epochs+1)*iters_per_epoch), sched_cfg.get('POWER', 0.9), 
+                              iters_per_epoch * sched_cfg.get('WARMUP_EPOCHS', 0), sched_cfg.get('WARMUP_RATIO', 0.1))
+
+
+    if train_cfg.get('DDP', False):
+        sampler = DistributedSampler(trainset, dist.get_world_size(), dist.get_rank(), shuffle=True)
+        sampler_val = DistributedSampler(valset, dist.get_world_size(), dist.get_rank(), shuffle=False) # Usually not shuffled for val
+        model = DDP(model, device_ids=[gpu], find_unused_parameters=model_cfg.get('DDP_FIND_UNUSED_PARAMS', True)) # find_unused_parameters might be needed
+    else:
+        sampler = RandomSampler(trainset)
+        sampler_val = RandomSampler(valset) # Or SequentialSampler for validation
+    
+    if resume_checkpoint:
+        start_epoch = resume_checkpoint.get('epoch', 0) # Use .get for safety
+        if 'optimizer_state_dict' in resume_checkpoint:
+            optimizer.load_state_dict(resume_checkpoint['optimizer_state_dict'])
+        if 'scheduler_state_dict' in resume_checkpoint:
+            scheduler.load_state_dict(resume_checkpoint['scheduler_state_dict'])
+        # loss = resume_checkpoint.get('loss', 0) # Loss is a dict for FasterRCNN
+        best_mAP = resume_checkpoint.get('best_mAP', 0.0) # Changed to best_mAP
+        logger.info(f"Resumed training from epoch {start_epoch}, best_mAP: {best_mAP}")
+           
+
+
+    def detection_collate_fn(batch):
+        # batch = List[Tuple[List[Tensor], Dict]]
+        # Unzip the batch into two lists
+        inputs, targets = zip(*batch)
+
+        # inputs: tuple of List[Tensor], length=batch_size
+        # We want to transpose the outer list: List[List[Tensor]] -> List[Tensor] (batched per modality)
+
+        # E.g., for 4 modals, each item is [mod0, mod1, mod2, mod3]
+        # zip(*inputs) gives: [[mod0_0, mod0_1, ...], [mod1_0, mod1_1, ...], ...]
+
+        inputs_transposed = [torch.stack(mod_list, dim=0) for mod_list in zip(*inputs)]
+
+        return inputs_transposed, list(targets)
+
+
+
+
+            
+
+    trainloader = DataLoader(trainset, batch_size=train_cfg['BATCH_SIZE'], num_workers=num_workers, drop_last=True, pin_memory=True, sampler=sampler, collate_fn=detection_collate_fn)
+    valloader = DataLoader(valset, batch_size=eval_cfg['BATCH_SIZE'], num_workers=num_workers, pin_memory=True, sampler=sampler_val, collate_fn=detection_collate_fn)
+
+    # trainloader = DataLoader(trainset, batch_size=train_cfg['BATCH_SIZE'], num_workers=num_workers, drop_last=True, pin_memory=True, sampler=sampler)
+    # valloader = DataLoader(valset, batch_size=eval_cfg['BATCH_SIZE'], num_workers=num_workers, pin_memory=True, sampler=sampler_val)
+
+    scaler = GradScaler(enabled=train_cfg.get('AMP', False))
+    
+    if (not train_cfg.get('DDP', False) or torch.distributed.get_rank() == 0):
+        writer = SummaryWriter(str(save_dir))
+        # cal_flops for detection models might need specific handling
+        # logger.info('================== model complexity =====================')
+        # cal_flops(model, dataset_cfg['MODALS'], logger) # Re-evaluate this for detection model
+        logger.info('================== model structure =====================')
+        logger.info(model) # This might be very verbose for FasterRCNN
+        logger.info('================== training config =====================')
+        logger.info(cfg)
+
+    for epoch in range(start_epoch, epochs):
+        model.train()
+        if train_cfg.get('DDP', False): sampler.set_epoch(epoch)
+        train_total_loss = 0.0
+        # Individual losses (optional, for more detailed logging)
+        # train_loss_classifier = 0.0
+        # train_loss_box_reg = 0.0
+        # train_loss_objectness = 0.0
+        # train_loss_rpn_box_reg = 0.0
+        
+        current_lr = optimizer.param_groups[0]['lr']
+        pbar_desc = f"Epoch: [{epoch+1}/{epochs}] Iter: [{0}/{iters_per_epoch}] LR: {current_lr:.8f} Loss: {0:.8f}"
+        pbar = tqdm(enumerate(trainloader), total=iters_per_epoch, desc=pbar_desc, disable=(train_cfg.get('DDP', False) and torch.distributed.get_rank() != 0))
+
+        for iter_num, (sample, targets) in pbar:
+            # images are already stacked by collate_fn
+            sample = [img.to(device) for img in sample]
+            # targets is a list of dicts, each dict's tensors need to be moved to device
+            targets = [{k: v.to(device) if isinstance(v, torch.Tensor) else v for k, v in t.items()} for t in targets]
+
+
+            optimizer.zero_grad(set_to_none=True)
+            
+            with autocast(enabled=train_cfg.get('AMP', False)):
+                # FasterRCNN returns a dict of losses during training when targets are provided
+                loss_dict = model(sample, targets)
+                loss = sum(l for l in loss_dict.values())
+                print(loss)
+
+            scaler.scale(loss).backward()
+            # Gradient clipping (optional, but often useful for detection)
+            if train_cfg.get('CLIP_GRAD_NORM', 0) > 0:
+                scaler.unscale_(optimizer) # Unscale before clipping
+                torch.nn.utils.clip_grad_norm_(model.parameters(), train_cfg['CLIP_GRAD_NORM'])
+            scaler.step(optimizer)
+            scaler.update()
+            scheduler.step() # Step scheduler
+            # torch.cuda.synchronize() # Not always necessary, can slow down
+
+            current_lr = optimizer.param_groups[0]['lr'] # Get current LR after scheduler step
+            train_total_loss += loss.item()
+
+            # Log individual losses if needed
+            # train_loss_classifier += loss_dict['loss_classifier'].item()
+            # ... and so on for other losses
+
+            pbar.set_description(f"Epoch: [{epoch+1}/{epochs}] Iter: [{iter_num+1}/{iters_per_epoch}] LR: {current_lr:.8f} Loss: {train_total_loss / (iter_num+1):.8f}")
+        
+        train_total_loss /= (iter_num + 1) # Average loss over iterations
+        if (not train_cfg.get('DDP', False) or torch.distributed.get_rank() == 0):
+            writer.add_scalar('train/total_loss', train_total_loss, epoch)
+            # writer.add_scalar('train/lr', current_lr, epoch)
+        torch.cuda.empty_cache()
+
+        # Evaluation
+        if ((epoch+1) % train_cfg.get('EVAL_INTERVAL', 1) == 0 and (epoch+1) > train_cfg.get('EVAL_START', 0)) or (epoch+1) == epochs:
+            if (not train_cfg.get('DDP', False) or torch.distributed.get_rank() == 0):
+                
+                current_mAP, all_coco_stats = evaluate_detection(model.module if train_cfg.get('DDP', False) else model, 
+                                                                 valloader, 
+                                                                 device, 
+                                                                 coco_val_gt_path,
+                                                                 logger) # Pass the actual model and logger
+                
+                writer.add_scalar('val/mAP', current_mAP, epoch)
+                for stat_name, stat_val in all_coco_stats.items():
+                    writer.add_scalar(f'val_coco_stats/{stat_name.replace(" ", "_")}', stat_val, epoch)
+
+
+                if current_mAP > best_mAP:
+                    # Clean up previous best checkpoint names
+                    prev_best_ckp_name = f"{model_cfg['NAME']}_{model_cfg['BACKBONE']}_{dataset_cfg['NAME']}_epoch{best_epoch}_{best_mAP:.4f}_checkpoint.pth"
+                    prev_best_name = f"{model_cfg['NAME']}_{model_cfg['BACKBONE']}_{dataset_cfg['NAME']}_epoch{best_epoch}_{best_mAP:.4f}.pth"
+                    
+                    prev_best_ckp_path = save_dir / prev_best_ckp_name
+                    prev_best_path = save_dir / prev_best_name
+                    if os.path.isfile(prev_best_path): os.remove(prev_best_path)
+                    if os.path.isfile(prev_best_ckp_path): os.remove(prev_best_ckp_path)
+                    
+                    best_mAP = current_mAP
+                    best_epoch = epoch+1
+                    
+                    cur_best_ckp_name = f"{model_cfg['NAME']}_{model_cfg['BACKBONE']}_{dataset_cfg['NAME']}_epoch{best_epoch}_{best_mAP:.4f}_checkpoint.pth"
+                    cur_best_name = f"{model_cfg['NAME']}_{model_cfg['BACKBONE']}_{dataset_cfg['NAME']}_epoch{best_epoch}_{best_mAP:.4f}.pth"
+                    
+                    torch.save(model.module.state_dict() if train_cfg.get('DDP', False) else model.state_dict(), save_dir / cur_best_name)
+                    torch.save({
+                        'epoch': best_epoch,
+                        'model_state_dict': model.module.state_dict() if train_cfg.get('DDP', False) else model.state_dict(),
+                        'optimizer_state_dict': optimizer.state_dict(),
+                        'scheduler_state_dict': scheduler.state_dict(),
+                        'best_mAP': best_mAP, # Changed to best_mAP
+                        # 'loss_dict': loss_dict # Can save last loss_dict if needed
+                    }, save_dir / cur_best_ckp_name)
+                    
+                    # Logging for detection would be different (e.g., mAP per class)
+                    # logger.info(print_iou(epoch, ious, miou, acc, macc, class_names)) # Removed segmentation specific logging
+                    logger.info(f"Epoch {epoch+1}: New best model saved with mAP: {best_mAP:.4f}")
+                logger.info(f"Current epoch:{epoch+1} mAP: {current_mAP:.4f} Best mAP: {best_mAP:.4f}") # Changed "Placeholder mAP" to "mAP"
+
+    if (not train_cfg.get('DDP', False) or torch.distributed.get_rank() == 0):
+        writer.close()
+    pbar.close()
+    end_time_struct = time.gmtime(time.time() - start)
+
+    table = [
+        ['Best mAP', f"{best_mAP:.4f}"], # Changed to mAP
+        ['Total Training Time', time.strftime("%H:%M:%S", end_time_struct)]
+    ]
+    if (not train_cfg.get('DDP', False) or torch.distributed.get_rank() == 0): # Ensure logger is used by rank 0 only in DDP
+        logger.info(tabulate(table, numalign='right'))
+
+
+if __name__ == '__main__':
+    parser = argparse.ArgumentParser()
+    # Default config might need to be a detection-specific one
+    parser.add_argument('--cfg', type=str, default='configs/deliver_detection_rgbdel.yaml', help='Configuration file to use') # Example new config name
+    args = parser.parse_args()
+
+    with open(args.cfg) as f:
+        cfg = yaml.load(f, Loader=yaml.SafeLoader)
+
+    fix_seeds(cfg.get('SEED', 3407)) # Get seed from cfg or default
+    setup_cudnn()
+    
+    # DDP setup
+    if cfg['TRAIN'].get('DDP', False):
+        gpu = setup_ddp()
+    else:
+        gpu = cfg.get('GPU_ID', 0) # Use a single GPU if DDP is false
+        os.environ['CUDA_VISIBLE_DEVICES'] = str(gpu)
+
+
+    modals_str = ''.join([m[0] for m in cfg['DATASET']['MODALS']]) if 'MODALS' in cfg['DATASET'] else 'rgb'
+    # Construct experiment name
+    exp_name_parts = [
+        cfg['DATASET']['NAME'],
+        cfg['MODEL']['BACKBONE'],
+        modals_str
+    ]
+    # Add a tag if specified in config
+    if cfg.get('TAG'):
+        exp_name_parts.append(cfg['TAG'])
+    exp_name = '_'.join(exp_name_parts)
+
+    save_dir_base = cfg.get('SAVE_DIR_BASE', 'output_detection') # Base directory for detection outputs
+    save_dir = Path(save_dir_base) / exp_name
+    
+    # Handle resume path for save_dir
+    resume_path_cfg = cfg['MODEL'].get('RESUME', None)
+    if resume_path_cfg and os.path.isfile(resume_path_cfg):
+        # If resuming, save to the same directory as the checkpoint
+        save_dir = Path(os.path.dirname(resume_path_cfg))
+    
+    os.makedirs(save_dir, exist_ok=True)
+    
+    # Logger setup: ensure logger is created only by rank 0 in DDP
+    if not cfg['TRAIN'].get('DDP', False) or torch.distributed.get_rank() == 0:
+        logger = get_logger(save_dir / 'train_detection.log') # Changed log file name
+        logger.info(f"Saving results to {save_dir}")
+    else: # For other DDP processes, create a dummy logger or disable logging
+        class DummyLogger:
+            def info(self, msg): pass
+            def warning(self, msg): pass
+            def error(self, msg): pass
+        logger = DummyLogger()
+
+
+    try:
+        main(cfg, gpu, save_dir)
+    except Exception as e:
+        if not cfg['TRAIN'].get('DDP', False) or torch.distributed.get_rank() == 0: # Log exception only on rank 0
+            logger.error(f"Training failed with error: {e}")
+            import traceback
+            logger.error(traceback.format_exc())
+        raise e # Re-raise the exception
+    finally:
+        if cfg['TRAIN'].get('DDP', False):
+            cleanup_ddp()

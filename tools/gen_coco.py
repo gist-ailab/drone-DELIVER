@@ -143,8 +143,12 @@ def create_coco_json(root_dir, img_lists, mode, box_type='xywh'):
         
         calculated_boxes= mask_process(os.path.join(root_dir, img_path))            
         for idx in range(len(calculated_boxes[0].keys())):
-            cat_id = list(calculated_boxes[0].keys())[idx]
-            boxes = calculated_boxes[0][cat_id]
+            cat_id_source = list(calculated_boxes[0].keys())[idx]
+            boxes = calculated_boxes[0][cat_id_source]
+            if cat_id_source == 4:
+                cat_id_edited = 1
+            elif cat_id_source == 10:
+                cat_id_idited = 2
 
             for box in boxes:
                 if box_type == 'xywh':
@@ -152,13 +156,14 @@ def create_coco_json(root_dir, img_lists, mode, box_type='xywh'):
                 coco_annotations.append({
                     "id": int(annotation_id),
                     "image_id": int(img_id),
-                    "category_id": cat_id,
+                    "category_id": cat_id_edited,
                     "bbox": box,
                     "area": (box[2] - box[0]) * (box[3] - box[1]),
                     "iscrowd": 0,
                     "segmentation": [],
                     "keypoints": [],
                     "num_keypoints": 0,
+                    "iscrowd": 0
                 })
                 annotation_id += 1
         img_id +=1
@@ -182,7 +187,7 @@ def main():
     parser = argparse.ArgumentParser(description='Generate COCO JSON file')
     parser.add_argument('--root_dir', type=str, default = '/media/ailab/HDD1/Workspace/src/Project/Drone24/detection/drone-DELIVER/data/DELIVER', help='Root directory of the dataset')
     parser.add_argument('--output_dir', type=str, default='/media/ailab/HDD1/Workspace/src/Project/Drone24/detection/drone-DELIVER/data/DELIVER', help='Output directory for the COCO JSON file')
-    parser.add_argument('--mode', type=str, default='test', help='Mode of the dataset (train, val, test)')
+    parser.add_argument('--mode', type=str, default='val', help='Mode of the dataset (train, val, test)')
     args = parser.parse_args()
     root_dir = args.root_dir
     output_dir = args.output_dir

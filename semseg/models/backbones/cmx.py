@@ -6,6 +6,7 @@ from semseg.models.layers import DropPath
 from semseg.models.modules.ffm import FeatureFusionModule as FFM
 from semseg.models.modules.ffm import FeatureRectifyModule as FRM
 
+
 class Attention(nn.Module):
     def __init__(self, dim, head, sr_ratio):
         super().__init__()
