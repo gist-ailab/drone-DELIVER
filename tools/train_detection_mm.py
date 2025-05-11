@@ -77,53 +77,56 @@ def evaluate_detection(model, dataloader, device, coco_gt_path, logger_instance)
                         box[2] - box[0], 
                         box[3] - box[1]
                     ]
+                    # coco_results.append({
+                    #     'image_id': image_id,
+                    #     'category_id': label,
+                    #     'bbox': [round(c, 2) for c in box], # Round for smaller JSON
+                    #     'score': round(float(score), 3)
+                    # })
                     coco_results.append({
-                        'image_id': image_id,
-                        'category_id': label,
-                        'bbox': [round(c, 2) for c in box], # Round for smaller JSON
-                        'score': round(float(score), 3)
-                    })
+                    'image_id': int(image_id),
+                    'category_id': int(label),
+                    'bbox': [round(float(c), 2) for c in coco_box],  # 안전하게 float 변환
+                    'score': round(float(score), 3)
+                })
     if not coco_results:
         logger_instance.warning("No detections found to evaluate.")
         return 0.0, {} # mAP, all_stats
     logger_instance.info(f"Generated {len(coco_results)} detections for {len(set(img_ids_processed))} images.")
-
     dt_results_path = Path('.') / 'tmp_coco_detection_results.json' 
     with open(dt_results_path, 'w') as f:
         json.dump(coco_results, f)
-
     temp_gt_path = None
     try:
         with open(coco_gt_path, 'r') as f:
             gt_data = json.load(f)
-
         # Check if conversion is needed by inspecting a sample bbox, if annotations exist
         needs_conversion = False
-        if gt_data.get('annotations') and len(gt_data['annotations']) > 0:
-            converted_annotations = []
-            for ann in gt_data['annotations']:
-                bbox_xyxy = ann['bbox']
-                x1, y1, x2, y2 = bbox_xyxy
-                bbox_xywh = [x1, y1, x2 - x1, y2 - y1]
-                # Ensure width and height are positive
-                if bbox_xywh[2] < 0: bbox_xywh[2] = 0
-                if bbox_xywh[3] < 0: bbox_xywh[3] = 0
-                new_ann = ann.copy()
-                new_ann['bbox'] = bbox_xywh
-                converted_annotations.append(new_ann)
-            gt_data_converted = gt_data.copy()
-            gt_data_converted['annotations'] = converted_annotations
-            temp_gt_path = Path('.') / 'tmp_coco_gt_xywh.json'
-            with open(temp_gt_path, 'w') as f:
-                json.dump(gt_data_converted, f)
-            final_gt_path_for_coco_tool = str(temp_gt_path)
-            logger_instance.info(f"Converted ground truth annotations from XYXY to XYWH, saved to temporary file: {temp_gt_path}")
-        else:
-            # No annotations in GT file, or file format issue, use original path
-            final_gt_path_for_coco_tool = coco_gt_path
-            logger_instance.info("Using original ground truth file (assuming XYWH or no annotations to convert).")
+        # if gt_data.get('annotations') and len(gt_data['annotations']) > 0:
+        #     # converted_annotations = []
+        #     # for ann in gt_data['annotations']:
+        #     #     bbox_xyxy = ann['bbox']
+        #     #     x1, y1, x2, y2 = bbox_xyxy
+        #     #     bbox_xywh = [x1, y1, x2 - x1, y2 - y1]
+        #     #     # Ensure width and height are positive
+        #     #     if bbox_xywh[2] < 0: bbox_xywh[2] = 0
+        #     #     if bbox_xywh[3] < 0: bbox_xywh[3] = 0
+        #     #     new_ann = ann.copy()
+        #     #     new_ann['bbox'] = bbox_xywh
+        #     #     converted_annotations.append(new_ann)
+        #     gt_data_converted = gt_data.copy()
+        #     # gt_data_converted['annotations'] = converted_annotations
+        #     temp_gt_path = Path('.') / 'tmp_coco_gt_xywh.json'
+        #     with open(temp_gt_path, 'w') as f:
+        #         json.dump(gt_data_converted, f)
+        #     final_gt_path_for_coco_tool = str(temp_gt_path)
+        #     logger_instance.info(f"Converted ground truth annotations from XYXY to XYWH, saved to temporary file: {temp_gt_path}")
+        # else:
+        #     # No annotations in GT file, or file format issue, use original path
+        #     final_gt_path_for_coco_tool = coco_gt_path
+        #     logger_instance.info("Using original ground truth file (assuming XYWH or no annotations to convert).")
 
-        coco_gt = COCO(final_gt_path_for_coco_tool)
+        coco_gt = COCO(coco_gt_path)
         coco_dt = coco_gt.loadRes(str(dt_results_path)) # Load detection results
         coco_eval = COCOeval(coco_gt, coco_dt, 'bbox') # Use 'bbox' for bounding box evaluation
         coco_eval.evaluate()
