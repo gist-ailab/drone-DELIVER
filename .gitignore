@@ -262,3 +262,5 @@ fabric.properties
 
 output/
 data/
+output_detection/
+*.log

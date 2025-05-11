@@ -112,15 +112,6 @@ def evaluate_detection(model, dataloader, device, coco_gt_path, logger_instance)
         # Check if conversion is needed by inspecting a sample bbox, if annotations exist
         needs_conversion = False
         if gt_data.get('annotations') and len(gt_data['annotations']) > 0:
-            # Assuming if one is xyxy, all are. This is a heuristic.
-            # A more robust check might involve looking at image sizes vs bbox coordinates.
-            # For xyxy: x2 > x1 and y2 > y1. For xywh: width > 0 and height > 0.
-            # If x2 (interpreted as width) is larger than image width, it's likely xyxy.
-            # For now, we rely on the user's statement that their GT is XYXY.
-            # Let's assume conversion is always needed if this path is taken.
-            # A simple check: if a 'width' value (bbox[2]) is very large, it might be x2.
-            # This is not perfectly robust. The user has confirmed their GT is XYXY.
-            # Convert GT annotations from XYXY to XYWH for COCO tool
             converted_annotations = []
             for ann in gt_data['annotations']:
                 bbox_xyxy = ann['bbox']
@@ -129,18 +120,14 @@ def evaluate_detection(model, dataloader, device, coco_gt_path, logger_instance)
                 # Ensure width and height are positive
                 if bbox_xywh[2] < 0: bbox_xywh[2] = 0
                 if bbox_xywh[3] < 0: bbox_xywh[3] = 0
-                
                 new_ann = ann.copy()
                 new_ann['bbox'] = bbox_xywh
                 converted_annotations.append(new_ann)
-            
             gt_data_converted = gt_data.copy()
             gt_data_converted['annotations'] = converted_annotations
-            
             temp_gt_path = Path('.') / 'tmp_coco_gt_xywh.json'
             with open(temp_gt_path, 'w') as f:
                 json.dump(gt_data_converted, f)
-            
             final_gt_path_for_coco_tool = str(temp_gt_path)
             logger_instance.info(f"Converted ground truth annotations from XYXY to XYWH, saved to temporary file: {temp_gt_path}")
         else:
@@ -150,9 +137,7 @@ def evaluate_detection(model, dataloader, device, coco_gt_path, logger_instance)
 
         coco_gt = COCO(final_gt_path_for_coco_tool)
         coco_dt = coco_gt.loadRes(str(dt_results_path)) # Load detection results
-
         coco_eval = COCOeval(coco_gt, coco_dt, 'bbox') # Use 'bbox' for bounding box evaluation
-        # coco_eval.params.imgIds = img_ids_processed # Optional: evaluate only on images present in results
         coco_eval.evaluate()
         coco_eval.accumulate()
         coco_eval.summarize() # This prints the summary to stdout by default
@@ -303,15 +288,7 @@ def main(cfg, gpu, save_dir):
         # batch = List[Tuple[List[Tensor], Dict]]
         # Unzip the batch into two lists
         inputs, targets = zip(*batch)
-
-        # inputs: tuple of List[Tensor], length=batch_size
-        # We want to transpose the outer list: List[List[Tensor]] -> List[Tensor] (batched per modality)
-
-        # E.g., for 4 modals, each item is [mod0, mod1, mod2, mod3]
-        # zip(*inputs) gives: [[mod0_0, mod0_1, ...], [mod1_0, mod1_1, ...], ...]
-
         inputs_transposed = [torch.stack(mod_list, dim=0) for mod_list in zip(*inputs)]
-
         return inputs_transposed, list(targets)
 
 
@@ -321,10 +298,6 @@ def main(cfg, gpu, save_dir):
 
     trainloader = DataLoader(trainset, batch_size=train_cfg['BATCH_SIZE'], num_workers=num_workers, drop_last=True, pin_memory=True, sampler=sampler, collate_fn=detection_collate_fn)
     valloader = DataLoader(valset, batch_size=eval_cfg['BATCH_SIZE'], num_workers=num_workers, pin_memory=True, sampler=sampler_val, collate_fn=detection_collate_fn)
-
-    # trainloader = DataLoader(trainset, batch_size=train_cfg['BATCH_SIZE'], num_workers=num_workers, drop_last=True, pin_memory=True, sampler=sampler)
-    # valloader = DataLoader(valset, batch_size=eval_cfg['BATCH_SIZE'], num_workers=num_workers, pin_memory=True, sampler=sampler_val)
-
     scaler = GradScaler(enabled=train_cfg.get('AMP', False))
     
     if (not train_cfg.get('DDP', False) or torch.distributed.get_rank() == 0):
@@ -341,49 +314,35 @@ def main(cfg, gpu, save_dir):
         model.train()
         if train_cfg.get('DDP', False): sampler.set_epoch(epoch)
         train_total_loss = 0.0
-        # Individual losses (optional, for more detailed logging)
-        # train_loss_classifier = 0.0
-        # train_loss_box_reg = 0.0
-        # train_loss_objectness = 0.0
-        # train_loss_rpn_box_reg = 0.0
-        
+        # Individual losses (optional, for more detailed logging)        
         current_lr = optimizer.param_groups[0]['lr']
         pbar_desc = f"Epoch: [{epoch+1}/{epochs}] Iter: [{0}/{iters_per_epoch}] LR: {current_lr:.8f} Loss: {0:.8f}"
         pbar = tqdm(enumerate(trainloader), total=iters_per_epoch, desc=pbar_desc, disable=(train_cfg.get('DDP', False) and torch.distributed.get_rank() != 0))
 
         for iter_num, (sample, targets) in pbar:
-            # images are already stacked by collate_fn
-            sample = [img.to(device) for img in sample]
-            # targets is a list of dicts, each dict's tensors need to be moved to device
-            targets = [{k: v.to(device) if isinstance(v, torch.Tensor) else v for k, v in t.items()} for t in targets]
-
-
+            sample = [img.to(device) for img in sample]                                                                      # images are already stacked by collate_fn
+            targets = [{k: v.to(device) if isinstance(v, torch.Tensor) else v for k, v in t.items()} for t in targets]       # targets is a list of dicts, each dict's tensors need to be moved to device
             optimizer.zero_grad(set_to_none=True)
             
             with autocast(enabled=train_cfg.get('AMP', False)):
                 # FasterRCNN returns a dict of losses during training when targets are provided
                 loss_dict = model(sample, targets)
                 loss = sum(l for l in loss_dict.values())
-                print(loss)
 
             scaler.scale(loss).backward()
-            # Gradient clipping (optional, but often useful for detection)
-            if train_cfg.get('CLIP_GRAD_NORM', 0) > 0:
+            
+            if train_cfg.get('CLIP_GRAD_NORM', 0) > 0:      # Gradient clipping (optional, but often useful for detection)          
                 scaler.unscale_(optimizer) # Unscale before clipping
                 torch.nn.utils.clip_grad_norm_(model.parameters(), train_cfg['CLIP_GRAD_NORM'])
             scaler.step(optimizer)
             scaler.update()
             scheduler.step() # Step scheduler
-            # torch.cuda.synchronize() # Not always necessary, can slow down
-
             current_lr = optimizer.param_groups[0]['lr'] # Get current LR after scheduler step
             train_total_loss += loss.item()
-
-            # Log individual losses if needed
-            # train_loss_classifier += loss_dict['loss_classifier'].item()
-            # ... and so on for other losses
-
-            pbar.set_description(f"Epoch: [{epoch+1}/{epochs}] Iter: [{iter_num+1}/{iters_per_epoch}] LR: {current_lr:.8f} Loss: {train_total_loss / (iter_num+1):.8f}")
+            loss_items_str = ' | '.join([f"{k}:{v.item():.4f}" for k, v in loss_dict.items()])
+            pbar.set_description(
+                f"Epoch: [{epoch+1}/{epochs}] | Iter: [{iter_num+1}/{iters_per_epoch}] | LR: {current_lr:.6f} | {loss_items_str}"
+            )
         
         train_total_loss /= (iter_num + 1) # Average loss over iterations
         if (not train_cfg.get('DDP', False) or torch.distributed.get_rank() == 0):
@@ -394,34 +353,26 @@ def main(cfg, gpu, save_dir):
         # Evaluation
         if ((epoch+1) % train_cfg.get('EVAL_INTERVAL', 1) == 0 and (epoch+1) > train_cfg.get('EVAL_START', 0)) or (epoch+1) == epochs:
             if (not train_cfg.get('DDP', False) or torch.distributed.get_rank() == 0):
-                
                 current_mAP, all_coco_stats = evaluate_detection(model.module if train_cfg.get('DDP', False) else model, 
                                                                  valloader, 
                                                                  device, 
                                                                  coco_val_gt_path,
                                                                  logger) # Pass the actual model and logger
-                
                 writer.add_scalar('val/mAP', current_mAP, epoch)
                 for stat_name, stat_val in all_coco_stats.items():
                     writer.add_scalar(f'val_coco_stats/{stat_name.replace(" ", "_")}', stat_val, epoch)
-
-
                 if current_mAP > best_mAP:
                     # Clean up previous best checkpoint names
                     prev_best_ckp_name = f"{model_cfg['NAME']}_{model_cfg['BACKBONE']}_{dataset_cfg['NAME']}_epoch{best_epoch}_{best_mAP:.4f}_checkpoint.pth"
                     prev_best_name = f"{model_cfg['NAME']}_{model_cfg['BACKBONE']}_{dataset_cfg['NAME']}_epoch{best_epoch}_{best_mAP:.4f}.pth"
-                    
                     prev_best_ckp_path = save_dir / prev_best_ckp_name
                     prev_best_path = save_dir / prev_best_name
                     if os.path.isfile(prev_best_path): os.remove(prev_best_path)
                     if os.path.isfile(prev_best_ckp_path): os.remove(prev_best_ckp_path)
-                    
                     best_mAP = current_mAP
                     best_epoch = epoch+1
-                    
                     cur_best_ckp_name = f"{model_cfg['NAME']}_{model_cfg['BACKBONE']}_{dataset_cfg['NAME']}_epoch{best_epoch}_{best_mAP:.4f}_checkpoint.pth"
                     cur_best_name = f"{model_cfg['NAME']}_{model_cfg['BACKBONE']}_{dataset_cfg['NAME']}_epoch{best_epoch}_{best_mAP:.4f}.pth"
-                    
                     torch.save(model.module.state_dict() if train_cfg.get('DDP', False) else model.state_dict(), save_dir / cur_best_name)
                     torch.save({
                         'epoch': best_epoch,
@@ -431,7 +382,6 @@ def main(cfg, gpu, save_dir):
                         'best_mAP': best_mAP, # Changed to best_mAP
                         # 'loss_dict': loss_dict # Can save last loss_dict if needed
                     }, save_dir / cur_best_ckp_name)
-                    
                     # Logging for detection would be different (e.g., mAP per class)
                     # logger.info(print_iou(epoch, ious, miou, acc, macc, class_names)) # Removed segmentation specific logging
                     logger.info(f"Epoch {epoch+1}: New best model saved with mAP: {best_mAP:.4f}")
@@ -503,7 +453,6 @@ if __name__ == '__main__':
             def warning(self, msg): pass
             def error(self, msg): pass
         logger = DummyLogger()
-
 
     try:
         main(cfg, gpu, save_dir)
