@@ -156,92 +156,92 @@ class DELIVERCOCO(Dataset):
 
 
 
-if __name__ == '__main__':
-    # Example: Define target size for augmentations
-    # For training, RandomResizedCrop will use this as output H, W
-    train_target_size = (512, 512) 
+# if __name__ == '__main__':
+#     # Example: Define target size for augmentations
+#     # For training, RandomResizedCrop will use this as output H, W
+#     train_target_size = (512, 512) 
     
-    # For validation, we need to determine the H,W for A.Resize.
-    # If we want to mimic the original "scale short edge then make divisible by 32",
-    # that logic needs an actual image's H,W.
-    # For this __main__ example, let's assume a fixed validation size or calculate based on a typical image.
-    # A typical original image size (e.g. from your data)
-    example_orig_h, example_orig_w = 1080, 1920 
-    val_short_edge_target = 512 # Target for the shorter edge before making divisible by 32
+#     # For validation, we need to determine the H,W for A.Resize.
+#     # If we want to mimic the original "scale short edge then make divisible by 32",
+#     # that logic needs an actual image's H,W.
+#     # For this __main__ example, let's assume a fixed validation size or calculate based on a typical image.
+#     # A typical original image size (e.g. from your data)
+#     example_orig_h, example_orig_w = 1080, 1920 
+#     val_short_edge_target = 512 # Target for the shorter edge before making divisible by 32
     
-    # Calculate final H,W for validation resize based on the original logic
-    # This is what the get_val_augmentation in augmentations_detection_mm.py expects if size is a tuple
-    val_target_h, val_target_w = _calculate_resize_dims(example_orig_h, example_orig_w, val_short_edge_target)
-    print(f"Using validation target H,W: ({val_target_h}, {val_target_w}) for A.Resize")
+#     # Calculate final H,W for validation resize based on the original logic
+#     # This is what the get_val_augmentation in augmentations_detection_mm.py expects if size is a tuple
+#     val_target_h, val_target_w = _calculate_resize_dims(example_orig_h, example_orig_w, val_short_edge_target)
+#     print(f"Using validation target H,W: ({val_target_h}, {val_target_w}) for A.Resize")
 
-    # Define which modalities are used and how they map in albumentations
-    # (e.g. 'depth' is treated like an 'image' for geometric transforms)
-    active_modals = ['img'] # Add 'depth' etc. if you have them: ['img', 'depth']
-    additional_targets_setup = {}
-    if 'depth' in active_modals:
-        additional_targets_setup['depth'] = 'image'
-    if 'lidar' in active_modals:
-        additional_targets_setup['lidar'] = 'image'
-    if 'event' in active_modals:
-        additional_targets_setup['event'] = 'image'
-    # If you have other modals, add them similarly
+#     # Define which modalities are used and how they map in albumentations
+#     # (e.g. 'depth' is treated like an 'image' for geometric transforms)
+#     active_modals = ['img'] # Add 'depth' etc. if you have them: ['img', 'depth']
+#     additional_targets_setup = {}
+#     if 'depth' in active_modals:
+#         additional_targets_setup['depth'] = 'image'
+#     if 'lidar' in active_modals:
+#         additional_targets_setup['lidar'] = 'image'
+#     if 'event' in active_modals:
+#         additional_targets_setup['event'] = 'image'
+#     # If you have other modals, add them similarly
 
 
-    # Get augmentation pipelines
-    train_augs = get_train_augmentation(train_target_size, additional_targets=additional_targets_setup)
-    val_augs = get_val_augmentation((val_target_h, val_target_w), additional_targets=additional_targets_setup)
+#     # Get augmentation pipelines
+#     train_augs = get_train_augmentation(train_target_size, additional_targets=additional_targets_setup)
+#     val_augs = get_val_augmentation((val_target_h, val_target_w), additional_targets=additional_targets_setup)
 
-    # Create Datasets
-    # The `target_img_size` in DELIVERCOCO is now mainly for fallback or if transform=None.
-    # The actual augmentation sizes are passed to get_train/val_augmentation.
-    train_dataset = DELIVERCOCO(root='data/DELIVER', split='train', transform=train_augs, modals=active_modals)
-    val_dataset = DELIVERCOCO(root='data/DELIVER', split='val', transform=val_augs, modals=active_modals)
+#     # Create Datasets
+#     # The `target_img_size` in DELIVERCOCO is now mainly for fallback or if transform=None.
+#     # The actual augmentation sizes are passed to get_train/val_augmentation.
+#     train_dataset = DELIVERCOCO(root='data/DELIVER', split='train', transform=train_augs, modals=active_modals)
+#     val_dataset = DELIVERCOCO(root='data/DELIVER', split='val', transform=val_augs, modals=active_modals)
 
-    if len(train_dataset) > 0:
-        train_loader = DataLoader(train_dataset, batch_size=2, shuffle=True, num_workers=2, collate_fn=lambda batch: tuple(zip(*batch)))
-        print(f"\nTesting Dataloader for TRAIN split (first batch):")
-        for i, (images, targets) in enumerate(train_loader):
-            print(f"Batch {i+1}:")
-            print(f"  Images type: {type(images)}, len: {len(images)}")
-            print(f"  Image 0 shape: {images[0].shape}, dtype: {images[0].dtype}")
-            print(f"  Targets type: {type(targets)}, len: {len(targets)}")
-            print(f"  Target 0: {targets[0]}")
-            if 'depth' in active_modals and 'depth' in targets[0]:
-                 print(f"  Target 0 depth shape: {targets[0]['depth'].shape}, dtype: {targets[0]['depth'].dtype}")
-            break 
-    else:
-        print("Train dataset is empty. Skipping Dataloader test for TRAIN.")
+#     if len(train_dataset) > 0:
+#         train_loader = DataLoader(train_dataset, batch_size=2, shuffle=True, num_workers=2, collate_fn=lambda batch: tuple(zip(*batch)))
+#         print(f"\nTesting Dataloader for TRAIN split (first batch):")
+#         for i, (images, targets) in enumerate(train_loader):
+#             print(f"Batch {i+1}:")
+#             print(f"  Images type: {type(images)}, len: {len(images)}")
+#             print(f"  Image 0 shape: {images[0].shape}, dtype: {images[0].dtype}")
+#             print(f"  Targets type: {type(targets)}, len: {len(targets)}")
+#             print(f"  Target 0: {targets[0]}")
+#             if 'depth' in active_modals and 'depth' in targets[0]:
+#                  print(f"  Target 0 depth shape: {targets[0]['depth'].shape}, dtype: {targets[0]['depth'].dtype}")
+#             break 
+#     else:
+#         print("Train dataset is empty. Skipping Dataloader test for TRAIN.")
 
-    if len(val_dataset) > 0:
-        val_loader = DataLoader(val_dataset, batch_size=2, shuffle=False, num_workers=2, collate_fn=lambda batch: tuple(zip(*batch)))
-        print(f"\nTesting Dataloader for VAL split (first batch):")
-        for i, (images, targets) in enumerate(val_loader):
-            print(f"Batch {i+1}:")
-            print(f"  Images type: {type(images)}, len: {len(images)}")
-            print(f"  Image 0 shape: {images[0].shape}, dtype: {images[0].dtype}")
-            print(f"  Targets type: {type(targets)}, len: {len(targets)}")
-            print(f"  Target 0: {targets[0]}")
-            if 'depth' in active_modals and 'depth' in targets[0]:
-                 print(f"  Target 0 depth shape: {targets[0]['depth'].shape}, dtype: {targets[0]['depth'].dtype}")
-            break
-    else:
-        print("Validation dataset is empty. Skipping Dataloader test for VAL.")
+#     if len(val_dataset) > 0:
+#         val_loader = DataLoader(val_dataset, batch_size=2, shuffle=False, num_workers=2, collate_fn=lambda batch: tuple(zip(*batch)))
+#         print(f"\nTesting Dataloader for VAL split (first batch):")
+#         for i, (images, targets) in enumerate(val_loader):
+#             print(f"Batch {i+1}:")
+#             print(f"  Images type: {type(images)}, len: {len(images)}")
+#             print(f"  Image 0 shape: {images[0].shape}, dtype: {images[0].dtype}")
+#             print(f"  Targets type: {type(targets)}, len: {len(targets)}")
+#             print(f"  Target 0: {targets[0]}")
+#             if 'depth' in active_modals and 'depth' in targets[0]:
+#                  print(f"  Target 0 depth shape: {targets[0]['depth'].shape}, dtype: {targets[0]['depth'].dtype}")
+#             break
+#     else:
+#         print("Validation dataset is empty. Skipping Dataloader test for VAL.")
 
-    # Example of iterating through one sample to check output
-    if len(train_dataset) > 0:
-        print("\nChecking a single sample from train_dataset:")
-        img_tensor, target_dict = train_dataset[0]
-        print(f"  Image tensor shape: {img_tensor.shape}, dtype: {img_tensor.dtype}")
-        print(f"  Target dict: {{")
-        for k, v in target_dict.items():
-            if isinstance(v, torch.Tensor):
-                print(f"    '{k}': shape={v.shape}, dtype={v.dtype}")
-            else:
-                print(f"    '{k}': {v}")
-        print(f"  }}")
-        print(f"  Image tensor min: {img_tensor.min()}, max: {img_tensor.max()}")
-        if 'depth' in active_modals and 'depth' in target_dict:
-            print(f"  Depth tensor min: {target_dict['depth'].min()}, max: {target_dict['depth'].max()}")
+#     # Example of iterating through one sample to check output
+#     if len(train_dataset) > 0:
+#         print("\nChecking a single sample from train_dataset:")
+#         img_tensor, target_dict = train_dataset[0]
+#         print(f"  Image tensor shape: {img_tensor.shape}, dtype: {img_tensor.dtype}")
+#         print(f"  Target dict: {{")
+#         for k, v in target_dict.items():
+#             if isinstance(v, torch.Tensor):
+#                 print(f"    '{k}': shape={v.shape}, dtype={v.dtype}")
+#             else:
+#                 print(f"    '{k}': {v}")
+#         print(f"  }}")
+#         print(f"  Image tensor min: {img_tensor.min()}, max: {img_tensor.max()}")
+#         if 'depth' in active_modals and 'depth' in target_dict:
+#             print(f"  Depth tensor min: {target_dict['depth'].min()}, max: {target_dict['depth'].max()}")
 
-    else:
-        print("Train dataset is empty, cannot check a single sample.")
+#     else:
+#         print("Train dataset is empty, cannot check a single sample.")

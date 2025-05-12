@@ -11,7 +11,8 @@ from tqdm import tqdm
 """
 num_classes: 25
 """
-CLASSES = ["Building", "Fence", "Other", "Pedestrian", "Pole", "RoadLine", "Road", "SideWalk", "Vegetation", 
+
+CLASSES = ["background", "Building", "Fence", "Other", "Pedestrian", "Pole", "RoadLine", "Road", "SideWalk", "Vegetation", 
             "Cars", "Wall", "TrafficSign", "Sky", "Ground", "Bridge", "RailTrack", "GroundRail", 
             "TrafficLight", "Static", "Dynamic", "Water", "Terrain", "TwoWheeler", "Bus", "Truck"]
 
@@ -41,27 +42,21 @@ PALETTE = np.array([[70, 70, 70],
         [  0, 60, 100],
         [  0,  0, 70],
         ])
-matching_dict ={
-    0:'None',
-    1:'Buillding',
-    2: 'Fence',
-    4: 'human',
-    5:'Fence',
-    7: 'Road',
-    10:'Car',
-    13:'Sky',
-    18:'TrafficLight',
-    23:'TwoWheeler'
-}
 
 def mask_process(img_pth):
     mask_pth  = img_pth.replace('rgb_', 'semantic_').replace('img', 'semantic')
     mask = cv2.imread(mask_pth)
     boxes_4 = extract_boxes(mask, None, 4)
     boxes_10 = extract_boxes(mask, None, 10)
+    boxes_23 = extract_boxes(mask, None, 23)
+    boxes_24 = extract_boxes(mask, None, 24)
+    boxes_25 = extract_boxes(mask, None, 25)
     box_dict={
         4: boxes_4,
-        10: boxes_10
+        10: boxes_10,
+        23: boxes_23,
+        24: boxes_24,
+        25: boxes_25
     }
     return box_dict, 
 
@@ -115,7 +110,7 @@ def create_coco_json(root_dir, img_lists, mode, box_type='xywh'):
         },
         {
             "id" : 2,
-            "name" : "Car",
+            "name" : "Vehicle",
             "supercategory": "none",
             "color": [110, 190, 160]
         } ]
@@ -128,7 +123,7 @@ def create_coco_json(root_dir, img_lists, mode, box_type='xywh'):
     example_img = cv2.imread(os.path.join(root_dir, img_paths[0]))
     height, width, _ = example_img.shape
 
-    for img_path in img_paths:
+    for img_path in tqdm(img_paths):
         img = cv2.imread(os.path.join(root_dir, img_path))
         height, width, _ = img.shape
         coco_images.append({
@@ -147,18 +142,23 @@ def create_coco_json(root_dir, img_lists, mode, box_type='xywh'):
             boxes = calculated_boxes[0][cat_id_source]
             if cat_id_source == 4:
                 cat_id_edited = 1
-            elif cat_id_source == 10:
-                cat_id_idited = 2
-
+            elif cat_id_source == 10 or cat_id_source == 23 or cat_id_source == 24 or cat_id_source == 25:
+                cat_id_edited = 2
             for box in boxes:
+                w = box[2] - box[0]
+                h = box[3] - box[1]
+                
+                if w * h < 144:      #Filter small boxes under 12 x 12
+                    continue
                 if box_type == 'xywh':
-                    box = [box[0], box[1], box[2] - box[0], box[3] - box[1]]
+                    box = [box[0], box[1], w, h]
+
                 coco_annotations.append({
                     "id": int(annotation_id),
                     "image_id": int(img_id),
                     "category_id": cat_id_edited,
                     "bbox": box,
-                    "area": (box[2] - box[0]) * (box[3] - box[1]),
+                    "area": w * h,
                     "iscrowd": 0,
                     "segmentation": [],
                     "keypoints": [],
@@ -187,7 +187,7 @@ def main():
     parser = argparse.ArgumentParser(description='Generate COCO JSON file')
     parser.add_argument('--root_dir', type=str, default = '/media/ailab/HDD1/Workspace/src/Project/Drone24/detection/drone-DELIVER/data/DELIVER', help='Root directory of the dataset')
     parser.add_argument('--output_dir', type=str, default='/media/ailab/HDD1/Workspace/src/Project/Drone24/detection/drone-DELIVER/data/DELIVER', help='Output directory for the COCO JSON file')
-    parser.add_argument('--mode', type=str, default='val', help='Mode of the dataset (train, val, test)')
+    parser.add_argument('--mode', type=str, default='test', help='Mode of the dataset (train, val, test)')
     args = parser.parse_args()
     root_dir = args.root_dir
     output_dir = args.output_dir
@@ -195,36 +195,9 @@ def main():
     img_lists = gen_img_list(root_dir, mode)
     coco_json = create_coco_json(root_dir, img_lists, mode)
     save_coco_json(coco_json, output_dir, mode)
-        
-        # mask = cv2.imread(os.path.join(root_dir, 'semantic', img_path))
-        # depth = cv2.imread(os.path.join(root_dir, 'depth', img_path))
-        # for id in matching_dict.keys():
-        #     boxes = extract_boxes(mask, depth, id)
-        #     for box in boxes:
-        #         coco_annotations.append({
-        #             "id": len(coco_annotations) + 1,
-        #             "image_id": int(img_id),
-        #             "category_id": matching_dict[id],
-        #             "bbox": box,
-        #             "area": (box[2] - box[0]) * (box[3] - box[1]),
-        #             "iscrowd": 0,
-        #             "segmentation": [],
-        #             "keypoints": [],
-        #             "num_keypoints": 0,
-        #             "image_width": width,   
 
-    
 
 if __name__ == '__main__':
-    # pth = '/media/ailab/HDD1/Workspace/src/Project/Drone24/detection/drone-DELIVER/data/DELIVER/semantic/night/train/MAP_6_point75/018100_semantic_front.png'
-    # rgb_pth = pth.replace('semantic_', 'rgb_').replace('semantic', 'img')
-    # # depth_pth = pth.replace('semantic_', 'depth_').replace('semantic', 'hha')
-    # depth_pth = pth.replace('semantic_', 'depth_').replace('semantic', 'depth')
-    # img_name = os.path.basename(rgb_pth)
-    # mask = cv2.imread(pth)
-    # rgb = cv2.imread(rgb_pth)
-    # depth = cv2.imread(depth_pth)
-    # boxes = extract_boxes(mask, depth, 4)
     main()
 
 
