@@ -1,7 +1,7 @@
-20250512 04:21:35 - root - INFO: - Saving results to output_detection/DELIVER_CMNeXt-B2_idel
-20250512 04:21:36 - root - INFO: - Attempting to load pretrained weights for backbone from: checkpoints/pretrained/segformer/mit_b2.pth
-20250512 04:21:37 - root - INFO: - ================== model structure =====================
-20250512 04:21:37 - root - INFO: - CMNeXtFasterRCNN(
+20250512 19:53:55 - root - INFO: - Saving results to output_detection/DELIVER_CMNeXt-B2_idel
+20250512 19:53:56 - root - INFO: - Attempting to load pretrained weights for backbone from: checkpoints/pretrained/segformer/mit_b2.pth
+20250512 19:53:59 - root - INFO: - ================== model structure =====================
+20250512 19:53:59 - root - INFO: - CMNeXtFasterRCNN(
   (transform): GeneralizedRCNNTransform(
       Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])
       Resize(min_size=(800,), max_size=1333, mode='bilinear')
@@ -1125,149 +1125,39 @@
     )
   )
 )
-20250512 04:21:37 - root - INFO: - ================== training config =====================
-20250512 04:21:37 - root - INFO: - {'DEVICE': 'cuda', 'SAVE_DIR': 'output', 'MODEL': {'NAME': 'CMNeXt', 'BACKBONE': 'CMNeXt-B2', 'PRETRAINED': 'checkpoints/pretrained/segformer/mit_b2.pth', 'RESUME': ''}, 'DATASET': {'NAME': 'DELIVER', 'ROOT': 'data/DELIVER', 'IGNORE_LABEL': 255, 'MODALS': ['image', 'depth', 'event', 'lidar']}, 'TRAIN': {'IMAGE_SIZE': [512, 512], 'BATCH_SIZE': 2, 'EPOCHS': 200, 'EVAL_START': 100, 'EVAL_INTERVAL': 5, 'AMP': False, 'DDP': False}, 'LOSS': {'NAME': 'OhemCrossEntropy', 'CLS_WEIGHTS': False}, 'OPTIMIZER': {'NAME': 'adamw', 'LR': 6e-05, 'WEIGHT_DECAY': 0.01}, 'SCHEDULER': {'NAME': 'warmuppolylr', 'POWER': 0.9, 'WARMUP': 10, 'WARMUP_RATIO': 0.1}, 'EVAL': {'MODEL_PATH': 'output/DELIVER/cmnext_b2_deliver_rgbdel.pth', 'IMAGE_SIZE': [512, 512], 'BATCH_SIZE': 1, 'MSF': {'ENABLE': False, 'FLIP': True, 'SCALES': [0.5, 0.75, 1.0, 1.25, 1.5, 1.75]}}, 'TEST': {'MODEL_PATH': 'output/DELIVER/cmnext_b2_deliver_rgbdel.pth', 'FILE': 'data/DELIVER', 'IMAGE_SIZE': [512, 512], 'OVERLAY': True}}
-20250512 05:24:52 - root - INFO: - Starting COCO evaluation...
-20250512 05:26:57 - root - INFO: - Generated 197911 detections for 2005 images.
-20250512 05:27:18 - root - INFO: - COCO Evaluation Summary: mAP=0.0000, mAP@.50=0.0000
-20250512 05:27:18 - root - INFO: -   mAP: 0.0000
-20250512 05:27:18 - root - INFO: -   mAP@.50: 0.0000
-20250512 05:27:18 - root - INFO: -   mAP@.75: 0.0000
-20250512 05:27:18 - root - INFO: -   mAP (small): 0.0000
-20250512 05:27:18 - root - INFO: -   mAP (medium): 0.0000
-20250512 05:27:18 - root - INFO: -   mAP (large): 0.0000
-20250512 05:27:18 - root - INFO: -   AR@1: 0.0000
-20250512 05:27:18 - root - INFO: -   AR@10: 0.0000
-20250512 05:27:18 - root - INFO: -   AR@100: 0.0000
-20250512 05:27:18 - root - INFO: -   AR (small): 0.0000
-20250512 05:27:18 - root - INFO: -   AR (medium): 0.0000
-20250512 05:27:18 - root - INFO: -   AR (large): 0.0000
-20250512 05:27:18 - root - INFO: - Current epoch:5 mAP: 0.0000 Best mAP: 0.0000
-20250512 06:30:27 - root - INFO: - Starting COCO evaluation...
-20250512 06:32:31 - root - INFO: - Generated 196457 detections for 2005 images.
-20250512 06:32:52 - root - INFO: - COCO Evaluation Summary: mAP=0.0000, mAP@.50=0.0000
-20250512 06:32:52 - root - INFO: -   mAP: 0.0000
-20250512 06:32:52 - root - INFO: -   mAP@.50: 0.0000
-20250512 06:32:52 - root - INFO: -   mAP@.75: 0.0000
-20250512 06:32:52 - root - INFO: -   mAP (small): 0.0000
-20250512 06:32:52 - root - INFO: -   mAP (medium): 0.0000
-20250512 06:32:52 - root - INFO: -   mAP (large): 0.0000
-20250512 06:32:52 - root - INFO: -   AR@1: 0.0000
-20250512 06:32:52 - root - INFO: -   AR@10: 0.0000
-20250512 06:32:52 - root - INFO: -   AR@100: 0.0000
-20250512 06:32:52 - root - INFO: -   AR (small): 0.0000
-20250512 06:32:52 - root - INFO: -   AR (medium): 0.0000
-20250512 06:32:52 - root - INFO: -   AR (large): 0.0000
-20250512 06:32:52 - root - INFO: - Current epoch:10 mAP: 0.0000 Best mAP: 0.0000
-20250512 07:36:12 - root - INFO: - Starting COCO evaluation...
-20250512 07:38:16 - root - INFO: - Generated 197980 detections for 2005 images.
-20250512 07:38:37 - root - INFO: - COCO Evaluation Summary: mAP=0.0000, mAP@.50=0.0000
-20250512 07:38:37 - root - INFO: -   mAP: 0.0000
-20250512 07:38:37 - root - INFO: -   mAP@.50: 0.0000
-20250512 07:38:37 - root - INFO: -   mAP@.75: 0.0000
-20250512 07:38:37 - root - INFO: -   mAP (small): 0.0000
-20250512 07:38:37 - root - INFO: -   mAP (medium): 0.0000
-20250512 07:38:37 - root - INFO: -   mAP (large): 0.0000
-20250512 07:38:37 - root - INFO: -   AR@1: 0.0000
-20250512 07:38:37 - root - INFO: -   AR@10: 0.0000
-20250512 07:38:37 - root - INFO: -   AR@100: 0.0000
-20250512 07:38:37 - root - INFO: -   AR (small): 0.0000
-20250512 07:38:37 - root - INFO: -   AR (medium): 0.0000
-20250512 07:38:37 - root - INFO: -   AR (large): 0.0000
-20250512 07:38:37 - root - INFO: - Current epoch:15 mAP: 0.0000 Best mAP: 0.0000
-20250512 08:41:58 - root - INFO: - Starting COCO evaluation...
-20250512 08:44:01 - root - INFO: - Generated 183535 detections for 2005 images.
-20250512 08:44:21 - root - INFO: - COCO Evaluation Summary: mAP=0.0000, mAP@.50=0.0000
-20250512 08:44:21 - root - INFO: -   mAP: 0.0000
-20250512 08:44:21 - root - INFO: -   mAP@.50: 0.0000
-20250512 08:44:21 - root - INFO: -   mAP@.75: 0.0000
-20250512 08:44:21 - root - INFO: -   mAP (small): 0.0000
-20250512 08:44:21 - root - INFO: -   mAP (medium): 0.0000
-20250512 08:44:21 - root - INFO: -   mAP (large): 0.0000
-20250512 08:44:21 - root - INFO: -   AR@1: 0.0000
-20250512 08:44:21 - root - INFO: -   AR@10: 0.0000
-20250512 08:44:21 - root - INFO: -   AR@100: 0.0000
-20250512 08:44:21 - root - INFO: -   AR (small): 0.0000
-20250512 08:44:21 - root - INFO: -   AR (medium): 0.0000
-20250512 08:44:21 - root - INFO: -   AR (large): 0.0000
-20250512 08:44:21 - root - INFO: - Current epoch:20 mAP: 0.0000 Best mAP: 0.0000
-20250512 09:47:45 - root - INFO: - Starting COCO evaluation...
-20250512 09:49:48 - root - INFO: - Generated 164254 detections for 2005 images.
-20250512 09:50:07 - root - INFO: - COCO Evaluation Summary: mAP=0.0000, mAP@.50=0.0000
-20250512 09:50:07 - root - INFO: -   mAP: 0.0000
-20250512 09:50:07 - root - INFO: -   mAP@.50: 0.0000
-20250512 09:50:07 - root - INFO: -   mAP@.75: 0.0000
-20250512 09:50:07 - root - INFO: -   mAP (small): 0.0000
-20250512 09:50:07 - root - INFO: -   mAP (medium): 0.0000
-20250512 09:50:07 - root - INFO: -   mAP (large): 0.0000
-20250512 09:50:07 - root - INFO: -   AR@1: 0.0000
-20250512 09:50:07 - root - INFO: -   AR@10: 0.0000
-20250512 09:50:07 - root - INFO: -   AR@100: 0.0000
-20250512 09:50:07 - root - INFO: -   AR (small): 0.0000
-20250512 09:50:07 - root - INFO: -   AR (medium): 0.0000
-20250512 09:50:07 - root - INFO: -   AR (large): 0.0000
-20250512 09:50:07 - root - INFO: - Current epoch:25 mAP: 0.0000 Best mAP: 0.0000
-20250512 10:53:39 - root - INFO: - Starting COCO evaluation...
-20250512 10:55:43 - root - INFO: - Generated 151676 detections for 2005 images.
-20250512 10:56:01 - root - INFO: - COCO Evaluation Summary: mAP=0.0000, mAP@.50=0.0000
-20250512 10:56:01 - root - INFO: -   mAP: 0.0000
-20250512 10:56:01 - root - INFO: -   mAP@.50: 0.0000
-20250512 10:56:01 - root - INFO: -   mAP@.75: 0.0000
-20250512 10:56:01 - root - INFO: -   mAP (small): 0.0000
-20250512 10:56:01 - root - INFO: -   mAP (medium): 0.0000
-20250512 10:56:01 - root - INFO: -   mAP (large): 0.0000
-20250512 10:56:01 - root - INFO: -   AR@1: 0.0000
-20250512 10:56:01 - root - INFO: -   AR@10: 0.0000
-20250512 10:56:01 - root - INFO: -   AR@100: 0.0000
-20250512 10:56:01 - root - INFO: -   AR (small): 0.0000
-20250512 10:56:01 - root - INFO: -   AR (medium): 0.0000
-20250512 10:56:01 - root - INFO: -   AR (large): 0.0000
-20250512 10:56:01 - root - INFO: - Current epoch:30 mAP: 0.0000 Best mAP: 0.0000
-20250512 11:59:36 - root - INFO: - Starting COCO evaluation...
-20250512 12:01:39 - root - INFO: - Generated 154616 detections for 2005 images.
-20250512 12:01:57 - root - INFO: - COCO Evaluation Summary: mAP=0.0000, mAP@.50=0.0000
-20250512 12:01:57 - root - INFO: -   mAP: 0.0000
-20250512 12:01:57 - root - INFO: -   mAP@.50: 0.0000
-20250512 12:01:57 - root - INFO: -   mAP@.75: 0.0000
-20250512 12:01:57 - root - INFO: -   mAP (small): 0.0000
-20250512 12:01:57 - root - INFO: -   mAP (medium): 0.0000
-20250512 12:01:57 - root - INFO: -   mAP (large): 0.0000
-20250512 12:01:57 - root - INFO: -   AR@1: 0.0000
-20250512 12:01:57 - root - INFO: -   AR@10: 0.0000
-20250512 12:01:57 - root - INFO: -   AR@100: 0.0000
-20250512 12:01:57 - root - INFO: -   AR (small): 0.0000
-20250512 12:01:57 - root - INFO: -   AR (medium): 0.0000
-20250512 12:01:57 - root - INFO: -   AR (large): 0.0000
-20250512 12:01:57 - root - INFO: - Current epoch:35 mAP: 0.0000 Best mAP: 0.0000
-20250512 13:07:13 - root - INFO: - Starting COCO evaluation...
-20250512 13:09:22 - root - INFO: - Generated 177206 detections for 2005 images.
-20250512 13:09:42 - root - INFO: - COCO Evaluation Summary: mAP=0.0000, mAP@.50=0.0000
-20250512 13:09:42 - root - INFO: -   mAP: 0.0000
-20250512 13:09:42 - root - INFO: -   mAP@.50: 0.0000
-20250512 13:09:42 - root - INFO: -   mAP@.75: 0.0000
-20250512 13:09:42 - root - INFO: -   mAP (small): 0.0000
-20250512 13:09:42 - root - INFO: -   mAP (medium): 0.0000
-20250512 13:09:42 - root - INFO: -   mAP (large): 0.0000
-20250512 13:09:42 - root - INFO: -   AR@1: 0.0000
-20250512 13:09:42 - root - INFO: -   AR@10: 0.0000
-20250512 13:09:42 - root - INFO: -   AR@100: 0.0000
-20250512 13:09:42 - root - INFO: -   AR (small): 0.0000
-20250512 13:09:42 - root - INFO: -   AR (medium): 0.0000
-20250512 13:09:42 - root - INFO: -   AR (large): 0.0000
-20250512 13:09:42 - root - INFO: - Current epoch:40 mAP: 0.0000 Best mAP: 0.0000
-20250512 14:16:26 - root - INFO: - Starting COCO evaluation...
-20250512 14:18:35 - root - INFO: - Generated 173416 detections for 2005 images.
-20250512 14:18:55 - root - INFO: - COCO Evaluation Summary: mAP=0.0000, mAP@.50=0.0000
-20250512 14:18:55 - root - INFO: -   mAP: 0.0000
-20250512 14:18:55 - root - INFO: -   mAP@.50: 0.0000
-20250512 14:18:55 - root - INFO: -   mAP@.75: 0.0000
-20250512 14:18:55 - root - INFO: -   mAP (small): 0.0000
-20250512 14:18:55 - root - INFO: -   mAP (medium): 0.0000
-20250512 14:18:55 - root - INFO: -   mAP (large): 0.0000
-20250512 14:18:55 - root - INFO: -   AR@1: 0.0000
-20250512 14:18:55 - root - INFO: -   AR@10: 0.0000
-20250512 14:18:55 - root - INFO: -   AR@100: 0.0000
-20250512 14:18:55 - root - INFO: -   AR (small): 0.0000
-20250512 14:18:55 - root - INFO: -   AR (medium): 0.0000
-20250512 14:18:55 - root - INFO: -   AR (large): 0.0000
-20250512 14:18:55 - root - INFO: - Current epoch:45 mAP: 0.0000 Best mAP: 0.0000
+20250512 19:53:59 - root - INFO: - ================== training config =====================
+20250512 19:53:59 - root - INFO: - {'DEVICE': 'cuda', 'SAVE_DIR': 'output', 'MODEL': {'NAME': 'CMNeXt', 'BACKBONE': 'CMNeXt-B2', 'PRETRAINED': 'checkpoints/pretrained/segformer/mit_b2.pth', 'RESUME': ''}, 'DATASET': {'NAME': 'DELIVER', 'ROOT': 'data/DELIVER', 'IGNORE_LABEL': 255, 'MODALS': ['image', 'depth', 'event', 'lidar']}, 'TRAIN': {'IMAGE_SIZE': [512, 512], 'BATCH_SIZE': 2, 'EPOCHS': 200, 'EVAL_START': 100, 'EVAL_INTERVAL': 5, 'AMP': False, 'DDP': False}, 'LOSS': {'NAME': 'OhemCrossEntropy', 'CLS_WEIGHTS': False}, 'OPTIMIZER': {'NAME': 'adamw', 'LR': 6e-05, 'WEIGHT_DECAY': 0.01}, 'SCHEDULER': {'NAME': 'warmuppolylr', 'POWER': 0.9, 'WARMUP': 10, 'WARMUP_RATIO': 0.1}, 'EVAL': {'MODEL_PATH': 'output/DELIVER/cmnext_b2_deliver_rgbdel.pth', 'IMAGE_SIZE': [512, 512], 'BATCH_SIZE': 1, 'MSF': {'ENABLE': False, 'FLIP': True, 'SCALES': [0.5, 0.75, 1.0, 1.25, 1.5, 1.75]}}, 'TEST': {'MODEL_PATH': 'output/DELIVER/cmnext_b2_deliver_rgbdel.pth', 'FILE': 'data/DELIVER', 'IMAGE_SIZE': [512, 512], 'OVERLAY': True}}
+20250512 19:54:02 - root - ERROR: - Training failed with error: no valid convolution algorithms available in CuDNN
+20250512 19:54:03 - root - ERROR: - Traceback (most recent call last):
+  File "/media/ailab/HDD1/Workspace/src/Project/Drone24/detection/drone-DELIVER/tools/train_detection_mm.py", line 431, in <module>
+    main(cfg, gpu, save_dir)
+  File "/media/ailab/HDD1/Workspace/src/Project/Drone24/detection/drone-DELIVER/tools/train_detection_mm.py", line 302, in main
+    loss_dict = model(sample, targets)
+  File "/home/ailab/anaconda3/envs/cmnext/lib/python3.8/site-packages/torch/nn/modules/module.py", line 1194, in _call_impl
+    return forward_call(*input, **kwargs)
+  File "/media/ailab/HDD1/Workspace/src/Project/Drone24/detection/drone-DELIVER/semseg/models/cmnext_detection.py", line 325, in forward
+    features = self.backbone(images)
+  File "/home/ailab/anaconda3/envs/cmnext/lib/python3.8/site-packages/torch/nn/modules/module.py", line 1194, in _call_impl
+    return forward_call(*input, **kwargs)
+  File "/media/ailab/HDD1/Workspace/src/Project/Drone24/detection/drone-DELIVER/semseg/models/cmnext_detection.py", line 107, in forward
+    features = self.body(x)
+  File "/home/ailab/anaconda3/envs/cmnext/lib/python3.8/site-packages/torch/nn/modules/module.py", line 1194, in _call_impl
+    return forward_call(*input, **kwargs)
+  File "/media/ailab/HDD1/Workspace/src/Project/Drone24/detection/drone-DELIVER/semseg/models/cmnext_detection.py", line 32, in forward
+    features = self.backbone(x)
+  File "/home/ailab/anaconda3/envs/cmnext/lib/python3.8/site-packages/torch/nn/modules/module.py", line 1194, in _call_impl
+    return forward_call(*input, **kwargs)
+  File "/media/ailab/HDD1/Workspace/src/Project/Drone24/detection/drone-DELIVER/semseg/models/backbones/cmnext.py", line 291, in forward
+    x_cam, H, W = self.patch_embed1(x_cam)
+  File "/home/ailab/anaconda3/envs/cmnext/lib/python3.8/site-packages/torch/nn/modules/module.py", line 1194, in _call_impl
+    return forward_call(*input, **kwargs)
+  File "/media/ailab/HDD1/Workspace/src/Project/Drone24/detection/drone-DELIVER/semseg/models/backbones/cmnext.py", line 78, in forward
+    x = self.proj(x)
+  File "/home/ailab/anaconda3/envs/cmnext/lib/python3.8/site-packages/torch/nn/modules/module.py", line 1194, in _call_impl
+    return forward_call(*input, **kwargs)
+  File "/home/ailab/anaconda3/envs/cmnext/lib/python3.8/site-packages/torch/nn/modules/conv.py", line 463, in forward
+    return self._conv_forward(input, self.weight, self.bias)
+  File "/home/ailab/anaconda3/envs/cmnext/lib/python3.8/site-packages/torch/nn/modules/conv.py", line 459, in _conv_forward
+    return F.conv2d(input, weight, bias, self.stride,
+RuntimeError: no valid convolution algorithms available in CuDNN
+
