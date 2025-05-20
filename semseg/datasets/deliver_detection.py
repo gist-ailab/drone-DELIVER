@@ -64,6 +64,7 @@ class DELIVERCOCO(Dataset):
         if 'categories' in coco_data:
             self.CLASSES = [cat['name'] for cat in sorted(coco_data['categories'], key=lambda x: x['id'])]
 
+
         self.annotations = {}
         for ann in coco_data['annotations']:
             if ann.get('iscrowd', 0): # Handle missing 'iscrowd' key, default to not crowd
@@ -117,19 +118,26 @@ class DELIVERCOCO(Dataset):
             sample['event'] = cv2.resize(eimg, (W, H), interpolation=cv2.INTER_NEAREST)
 
         # --- Load Annotations ---
-        anns = self.annotations.get(img_id, [])
-        bboxes_coco = [] # List of [x, y, w, h]
-        labels_list = []
+        # anns = self.annotations.get(img_id, [])
+        # bboxes_coco = [] # List of [x, y, w, h]
+        # labels_list = []
 
-        anns = self.annotations.get(img_id, [])
-        bboxes_coco = [ann['bbox'] for ann in anns]
-        labels_list = [self.cat_id_to_idx[ann['category_id']] for ann in anns]  # ★ 0-based 변환
-        # ids = [ann['category_id'] for ann in self.annotations[self.img_ids[0]]]  # 임의 한 이미지
+        # anns = self.annotations.get(img_id, [])
+        # bboxes_coco = [ann['bbox'] for ann in anns]
+        # labels_list = [self.cat_id_to_idx[ann['category_id']] for ann in anns]  # ★ 0-based 변환
         # print('DEBUG::::raw category_id sample:', ids[:10])  # 아마 [1] 또는 [1,2] ...
 
 
-        sample['bboxes'] = bboxes_coco
-        sample['labels'] = labels_list
+        # --- inside DELIVERCOCO.__getitem__ ---
+        bboxes_xyxy, labels_list = [], []
+        for ann in self.annotations.get(img_id, []):
+            x, y, w, h = ann["bbox"]               # COCO 형식
+            bboxes_xyxy.append([x, y, x + w, y + h])     # ★ 변환
+            labels_list.append(self.cat_id_to_idx[ann["category_id"]])
+
+        sample["bboxes"] = bboxes_xyxy
+        sample["labels"] = labels_list
+
         if self.transform:
             transformed = self.transform(**sample)
             sample['image'] = transformed['image']
