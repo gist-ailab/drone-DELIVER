@@ -34,105 +34,11 @@ from semseg.schedulers import get_scheduler # Re-evaluate if needed for detectio
 from semseg.optimizers import get_optimizer # Re-evaluate if needed for detection
 from semseg.schedulers import get_scheduler
 from semseg.optimizers import get_optimizer
-
 from semseg.utils.utils import fix_seeds, setup_cudnn, cleanup_ddp, setup_ddp, get_logger, cal_flops # print_iou removed
 # from val_mm import evaluate # evaluate function is for segmentation, needs replacement for detection
+from utils.eval_utils import evaluate_detection # Adjusted import for detection evaluation
+from utils.train_utils import get_model_from_config
 
-
-# COCO Evaluation function
-def evaluate_detection(model, dataloader, device, coco_gt_path, logger_instance):
-    logger_instance.info("Starting COCO evaluation...")
-    model.eval()
-    coco_results = []
-    img_ids_processed = []
-
-    with torch.no_grad():
-        for images, targets in tqdm(dataloader, desc="Evaluating"):
-            sample = [img.to(device) for img in images]                                                                      # images are already stacked by collate_fn
-            targets = [{k: v.to(device) if isinstance(v, torch.Tensor) else v for k, v in t.items()} for t in targets]       # targets is a list of dicts, each dict's tensors need to be moved to device
-            outputs = model(sample) # Model in eval mode returns list of dicts (boxes, labels, scores)
-            for i, output in enumerate(outputs):
-                image_id = targets[i]['image_id'].item() # Get original image_id
-                img_ids_processed.append(image_id)
-                boxes = output['boxes'].cpu().numpy()
-                labels = output['labels'].cpu().numpy()
-                scores = output['scores'].cpu().numpy()
-                
-                for box_idx in range(boxes.shape[0]):
-                    score = scores[box_idx]
-                    if score < 0.05: # Confidence threshold, can be configured
-                        continue
-                    
-                    label = labels[box_idx]
-                    box = boxes[box_idx] # x1, y1, x2, y2
-                    coco_box = [
-                        box[0], 
-                        box[1], 
-                        box[2] - box[0], 
-                        box[3] - box[1]
-                    ]
-                    coco_results.append({
-                    'image_id': int(image_id),
-                    'category_id': int(label),
-                    'bbox': [round(float(c), 2) for c in coco_box],  # 안전하게 float 변환
-                    'score': round(float(score), 3)
-                })
-    if not coco_results:
-        logger_instance.warning("No detections found to evaluate.")
-        return 0.0, {} # mAP, all_stats
-    logger_instance.info(f"Generated {len(coco_results)} detections for {len(set(img_ids_processed))} images.")
-    dt_results_path = Path('.') / 'tmp_coco_detection_results.json' 
-    with open(dt_results_path, 'w') as f:
-        json.dump(coco_results, f)
-    temp_gt_path = None
-    try:
-        with open(coco_gt_path, 'r') as f:
-            gt_data = json.load(f)
-        coco_gt = COCO(coco_gt_path)
-        coco_dt = coco_gt.loadRes(str(dt_results_path)) # Load detection results
-        coco_eval = COCOeval(coco_gt, coco_dt, 'bbox') # Use 'bbox' for bounding box evaluation
-        coco_eval.evaluate()
-        coco_eval.accumulate()
-        coco_eval.summarize() # This prints the summary to stdout by default
-        
-        # Capture the summary string if needed (pycocotools prints directly)
-        # Redirect stdout temporarily if you want to capture COCOeval's printed summary
-        
-        # stats is a numpy array with 12 numbers (mAP [IoU=0.50:0.95], AP50, AP75, etc.)
-        stats = coco_eval.stats
-        mAP = stats[0] # AP @ IoU=0.50:0.95 | area=all | maxDets=100
-        mAP50 = stats[1] # AP @ IoU=0.50
-        all_stats_dict = {
-            "mAP": mAP,
-            "mAP@.50": mAP50,
-            "mAP@.75": stats[2],
-            "mAP (small)": stats[3],
-            "mAP (medium)": stats[4],
-            "mAP (large)": stats[5],
-            "AR@1": stats[6],
-            "AR@10": stats[7],
-            "AR@100": stats[8],
-            "AR (small)": stats[9],
-            "AR (medium)": stats[10],
-            "AR (large)": stats[11],
-        }
-        logger_instance.info(f"COCO Evaluation Summary: mAP={mAP:.4f}, mAP@.50={mAP50:.4f}")
-        for k, v in all_stats_dict.items():
-            logger_instance.info(f"  {k}: {v:.4f}")
-
-    except Exception as e:
-        logger_instance.error(f"Error during COCO evaluation: {e}")
-        import traceback
-        logger_instance.error(traceback.format_exc())
-        mAP = 0.0
-        all_stats_dict = {}
-    finally:
-        if os.path.exists(dt_results_path):
-            os.remove(dt_results_path) # Clean up temporary detection results file
-        if temp_gt_path and os.path.exists(temp_gt_path):
-            os.remove(temp_gt_path) # Clean up temporary converted GT file
-
-    return mAP, all_stats_dict
 
 
 def main(cfg, gpu, save_dir):
@@ -148,12 +54,7 @@ def main(cfg, gpu, save_dir):
     resume_path = cfg['MODEL'].get('RESUME', None) # Use .get for safer access
     gpus = int(os.environ.get('WORLD_SIZE', 1))
 
-    # # Augmentations - Assuming these are suitable for detection or will be adapted
-    # traintransform = get_train_augmentation(train_cfg['IMAGE_SIZE'], ) # seg_fill removed
-    # valtransform = get_val_augmentation(eval_cfg['IMAGE_SIZE'])
-
-    active_modals = dataset_cfg['MODALS']
-    
+    active_modals = dataset_cfg['MODALS']    
     additional_targets_setup = {}
     if 'depth' in active_modals:
         additional_targets_setup['depth'] = 'image'
@@ -176,7 +77,9 @@ def main(cfg, gpu, save_dir):
 
     # Model
     # CMNeXtFasterRCNN expects backbone_name, num_classes, modals
-    model = CMNeXtFasterRCNN(backbone_name=model_cfg['BACKBONE'], num_classes=num_detection_classes, modals=dataset_cfg['MODALS'])
+    # model = CMNeXtFasterRCNN(backbone_name=model_cfg['BACKBONE'], num_classes=num_detection_classes, modals=dataset_cfg['MODALS'])
+    model = get_model_from_config(cfg, num_detection_classes)
+
     
     resume_checkpoint = None
     if resume_path and os.path.isfile(resume_path):
@@ -214,8 +117,22 @@ def main(cfg, gpu, save_dir):
         logger.info(f"Resumed training from epoch {start_epoch}, best_mAP: {best_mAP}")
 
     def detection_collate_fn(batch):
-        inputs, targets = zip(*batch)
-        inputs_transposed = [torch.stack(mod_list, dim=0) for mod_list in zip(*inputs)]
+        """
+        batch: list[ tuple(modal_tensors_list, target_dict) ]
+
+        - 빈 타겟(박스 0개) 이미지도 그대로 유지
+        - modal 별 tensor shape: (C, H, W)
+        - 최종 return:
+            inputs_transposed : list[Tensor]  # len = #modal, shape (B, C, H, W)
+            targets           : list[Dict]    # len = B
+        """
+        # ❶ DataLoader 가 drop_last=True 이므로 마지막 미니배치가 작아도 안전
+        inputs, targets = zip(*batch)                         # tuple → tuple
+
+        # ❷ modal 차원 먼저 transpose 해서 모달별 스택 (ex. [rgb_list, depth_list, …])
+        inputs_transposed = [torch.stack(mod_list, dim=0)     # (B, C, H, W)
+                            for mod_list in zip(*inputs)]
+
         return inputs_transposed, list(targets)
 
     trainloader = DataLoader(trainset, batch_size=train_cfg['BATCH_SIZE'], num_workers=num_workers, drop_last=True, pin_memory=True, sampler=sampler, collate_fn=detection_collate_fn)
@@ -224,9 +141,6 @@ def main(cfg, gpu, save_dir):
     
     if (not train_cfg.get('DDP', False) or torch.distributed.get_rank() == 0):
         writer = SummaryWriter(str(save_dir))
-        # cal_flops for detection models might need specific handling
-        logger.info('================== model complexity =====================')
-        cal_flops(model, dataset_cfg['MODALS'], logger) # Re-evaluate this for detection model
         logger.info('================== model structure =====================')
         logger.info(model) # This might be very verbose for FasterRCNN
         logger.info('================== training config =====================')
@@ -323,7 +237,7 @@ def main(cfg, gpu, save_dir):
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     # Default config might need to be a detection-specific one
-    parser.add_argument('--cfg', type=str, default='configs/deliver_detection_rgbdel.yaml', help='Configuration file to use') # Example new config name
+    parser.add_argument('--cfg', type=str, default='configs/deliver_detection_rgbdl_retinanet.yaml', help='Configuration file to use') # Example new config name
     args = parser.parse_args()
 
     with open(args.cfg) as f:

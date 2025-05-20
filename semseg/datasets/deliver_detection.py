@@ -13,8 +13,6 @@ from typing import Tuple, List, Dict, Union # Added Dict, Union
 # import glob # Not used
 # import einops # Not used
 from torch.utils.data import DataLoader
-# from torch.utils.data import DistributedSampler, RandomSampler # Not used in this file's __main__
-# Import albumentations-based augmentations
 from semseg.augmentations_detection_mm2 import get_train_augmentation, get_val_augmentation
 import json
 
@@ -51,17 +49,19 @@ class DELIVERCOCO(Dataset):
             self.transform = transform
 
 
-        ann_path = self.root / f'coco_{split}.json'
+        ann_path = os.path.join(self.root , f'coco_{split}.json')
         with open(ann_path, 'r') as f:
             coco_data = json.load(f)
+
+        coco_cat_ids = [cat['id'] for cat in sorted(coco_data['categories'], key=lambda x: x['id'])]
+        self.cat_id_to_idx = {cid: idx for idx, cid in enumerate(coco_cat_ids)}
+        self.CLASSES = [cat['name'] for cat in sorted(coco_data['categories'], key=lambda x: x['id'])]
 
         self.image_id_to_filename = {img_info['id']: img_info['file_name'] for img_info in coco_data['images']}
         self.img_ids = list(self.image_id_to_filename.keys())
         
         # Update CLASSES from coco_data if available and consistent
         if 'categories' in coco_data:
-            # Assuming category IDs are 1-indexed and map sequentially to class names
-            # Or use a direct mapping if IDs are not sequential or 0-indexed
             self.CLASSES = [cat['name'] for cat in sorted(coco_data['categories'], key=lambda x: x['id'])]
 
         self.annotations = {}
@@ -123,11 +123,13 @@ class DELIVERCOCO(Dataset):
 
         anns = self.annotations.get(img_id, [])
         bboxes_coco = [ann['bbox'] for ann in anns]
-        labels_list = [ann['category_id'] for ann in anns]
+        labels_list = [self.cat_id_to_idx[ann['category_id']] for ann in anns]  # ★ 0-based 변환
+        # ids = [ann['category_id'] for ann in self.annotations[self.img_ids[0]]]  # 임의 한 이미지
+        # print('DEBUG::::raw category_id sample:', ids[:10])  # 아마 [1] 또는 [1,2] ...
+
 
         sample['bboxes'] = bboxes_coco
         sample['labels'] = labels_list
-
         if self.transform:
             transformed = self.transform(**sample)
             sample['image'] = transformed['image']
@@ -139,7 +141,6 @@ class DELIVERCOCO(Dataset):
                 sample['event'] = transformed['event']
 
             return_list = [sample[k] for k in self.modals]
-
             target = {
                 'boxes': torch.tensor(transformed['bboxes'], dtype=torch.float32),
                 'labels': torch.tensor(transformed['labels'], dtype=torch.int64),
