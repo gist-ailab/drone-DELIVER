@@ -836,7 +836,8 @@ class CMNeXtRetinaNet(nn.Module):
 
         cls_preds = torch.cat(cls_preds, dim=1)  # [B, N, C]
         box_preds = torch.cat(box_preds, dim=1)  # [B, N, 4]
-        anchors = torch.cat(anchors, dim=0).unsqueeze(0).expand(cls_preds.size(0), -1, 4)
+        # anchors = torch.cat(anchors, dim=0).unsqueeze(0).expand(cls_preds.size(0), -1, 4)
+        # anchors = anchors.unsqueeze(0).expand(cls_preds.size(0), -1, 4)
 
         for b in range(cls_preds.size(0)):
             scores = cls_preds[b].sigmoid()
@@ -863,19 +864,51 @@ class CMNeXtRetinaNet(nn.Module):
 
         return results
 
+    # def decode_boxes(self, anchors, deltas):
+    #     # anchors: [N, 4] (x1, y1, x2, y2)
+    #     # deltas: [N, 4] (dx, dy, dw, dh)
+    #     widths = anchors[:, 2] - anchors[:, 0]
+    #     heights = anchors[:, 3] - anchors[:, 1]
+    #     ctr_x = anchors[:, 0] + 0.5 * widths
+    #     ctr_y = anchors[:, 1] + 0.5 * heights
+
+    #     dx, dy, dw, dh = deltas.unbind(-1)
+    #     pred_ctr_x = dx * widths + ctr_x
+    #     pred_ctr_y = dy * heights + ctr_y
+    #     pred_w = torch.exp(dw) * widths
+    #     pred_h = torch.exp(dh) * heights
+
+    #     pred_boxes = torch.stack([
+    #         pred_ctr_x - 0.5 * pred_w,
+    #         pred_ctr_y - 0.5 * pred_h,
+    #         pred_ctr_x + 0.5 * pred_w,
+    #         pred_ctr_y + 0.5 * pred_h,
+    #     ], dim=-1)
+    #     return pred_boxes
+
     def decode_boxes(self, anchors, deltas):
         # anchors: [N, 4] (x1, y1, x2, y2)
         # deltas: [N, 4] (dx, dy, dw, dh)
+
         widths = anchors[:, 2] - anchors[:, 0]
         heights = anchors[:, 3] - anchors[:, 1]
         ctr_x = anchors[:, 0] + 0.5 * widths
         ctr_y = anchors[:, 1] + 0.5 * heights
 
         dx, dy, dw, dh = deltas.unbind(-1)
+
+        # Clip the deltas to avoid large transformations
+        dw = torch.clamp(dw, min=-1.0, max=1.0)
+        dh = torch.clamp(dh, min=-1.0, max=1.0)
+
         pred_ctr_x = dx * widths + ctr_x
         pred_ctr_y = dy * heights + ctr_y
         pred_w = torch.exp(dw) * widths
         pred_h = torch.exp(dh) * heights
+
+        # Clip to avoid generating extremely large boxes
+        pred_w = torch.clamp(pred_w, min=0, max=1000)  # Max width (you can adjust this value)
+        pred_h = torch.clamp(pred_h, min=0, max=1000)  # Max height (you can adjust this value)
 
         pred_boxes = torch.stack([
             pred_ctr_x - 0.5 * pred_w,
@@ -883,6 +916,10 @@ class CMNeXtRetinaNet(nn.Module):
             pred_ctr_x + 0.5 * pred_w,
             pred_ctr_y + 0.5 * pred_h,
         ], dim=-1)
+
+        # Check for any NaNs or Inf values in the predicted boxes and remove them
+        pred_boxes = torch.nan_to_num(pred_boxes, nan=0.0, posinf=0.0, neginf=0.0)
+
         return pred_boxes
     
     def compute_loss(self, cls_outputs, box_outputs, anchors, targets, alpha: float = 0.25, gamma: float = 2.0):
