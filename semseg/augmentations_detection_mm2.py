@@ -5,7 +5,7 @@ from typing import Tuple, List, Union, Tuple, Optional, Dict
 
 
 def get_train_augmentation(img_size, 
-                           format='coco', 
+                           format='pascal_voc',
                            additional_targets: Dict[str, str] = None):
     if additional_targets is None:
         additional_targets = {}
@@ -24,8 +24,8 @@ def get_train_augmentation(img_size,
     return albumentation_aug
 
 
-def get_val_augmentation(img_size,
-                           format='coco', 
+def get_val_augmentation(img_size, 
+                           format='pascal_voc',
                            additional_targets: Dict[str, str] = None):
     h = img_size[0]
     w = img_size[1]

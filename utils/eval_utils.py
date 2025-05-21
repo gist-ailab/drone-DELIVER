@@ -6,6 +6,7 @@ from pathlib import Path
 import json
 from pycocotools.coco import COCO
 from pycocotools.cocoeval import COCOeval
+from tqdm import tqdm
 
 # COCO Evaluation function
 def evaluate_detection(model, dataloader, device, coco_gt_path, logger_instance):
@@ -32,11 +33,11 @@ def evaluate_detection(model, dataloader, device, coco_gt_path, logger_instance)
                     coco_box = [x1, y1, x2 - x1, y2 - y1]
                     coco_results.append({
                         'image_id': image_id,
-                        'category_id': int(label),
+                        'category_id': int(label) +1,   # 0 based to 1 ased
                         'bbox': [round(float(c), 2) for c in coco_box],
                         'score': round(float(score), 3)
                     })
-                    
+
     if not coco_results:
         logger_instance.warning("No detections found to evaluate.")
         return 0.0, {} # mAP, all_stats
@@ -54,9 +55,6 @@ def evaluate_detection(model, dataloader, device, coco_gt_path, logger_instance)
         coco_eval.evaluate()
         coco_eval.accumulate()
         coco_eval.summarize() # This prints the summary to stdout by default
-        
-        # Capture the summary string if needed (pycocotools prints directly)
-        # Redirect stdout temporarily if you want to capture COCOeval's printed summary
         
         # stats is a numpy array with 12 numbers (mAP [IoU=0.50:0.95], AP50, AP75, etc.)
         stats = coco_eval.stats

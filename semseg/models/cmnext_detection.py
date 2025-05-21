@@ -908,10 +908,6 @@ class CMNeXtRetinaNet(nn.Module):
             gt_boxes = targets[b]['boxes']
             gt_labels = targets[b]['labels']
             num_anchors = anchors_cat.shape[1]
-
-
-
-
             if gt_boxes.numel() == 0:
                 cls_target = torch.zeros((num_anchors, self.num_classes), device=device)
                 total_cls_loss += sigmoid_focal_loss(cls_preds_cat[b], cls_target,
@@ -923,13 +919,6 @@ class CMNeXtRetinaNet(nn.Module):
             pos_mask = max_ious >= 0.5
             neg_mask = max_ious < 0.4
             ignore_mask = ~(pos_mask | neg_mask)
-
-            print('GT boxes (first 3):', gt_boxes[:3].cpu())
-            print('max IoU:', max_ious.max().item())
-            print('pos/neg/ignore:',
-                int(pos_mask.sum()), int(neg_mask.sum()), int(ignore_mask.sum()))
-            
-
 
             cls_target = torch.zeros((num_anchors, self.num_classes), device=device)
             cls_target[pos_mask, gt_labels[matched_idx[pos_mask]]] = 1.0

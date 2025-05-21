@@ -4,9 +4,9 @@ channels:
   - conda-forge
   - defaults
 dependencies:
-  - python=3.8.12
+  - python=3.9
   - pip
-  - cudatoolkit=11.3
+  - cudatoolkit=11.6
   - cudnn=8.2.1
   - pytorch=1.13.1
   - torchvision=0.14.1
@@ -63,3 +63,5 @@ dependencies:
     - tqdm==4.62.3
     - werkzeug==2.2.2
     - yacs==0.1.8
+    - pyyaml
+    - tabulate
