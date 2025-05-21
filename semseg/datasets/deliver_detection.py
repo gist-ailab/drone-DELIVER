@@ -36,16 +36,14 @@ class DELIVERCOCO(Dataset):
         self.case = case # Could be used to select sub-folders or specific conditions
         self.target_img_size = target_img_size # Used for get_val_augmentation
 
+        split = 'train' if 'train' in ann_path else 'val'
         # Initialize augmentations if not provided (e.g., for train/val splits)
         if transform is None:
             additional_targets_setup = {}
-
             if 'train' in ann_path:
                 self.transform = get_train_augmentation(self.target_img_size, additional_targets=additional_targets_setup)
-                split = 'train'
             else: # val or test
                 self.transform = get_val_augmentation(self.target_img_size, additional_targets=additional_targets_setup)
-                split = 'val'
         else:
             self.transform = transform
 

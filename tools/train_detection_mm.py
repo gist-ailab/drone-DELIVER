@@ -255,7 +255,7 @@ def main(cfg, gpu, save_dir):
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     # Default config might need to be a detection-specific one
-    parser.add_argument('--cfg', type=str, default='configs/deliver_detection_rgbdl_retinanet.yaml', help='Configuration file to use') # Example new config name
+    parser.add_argument('--cfg', type=str, default='configs/levine-deliver_detection_rgbdl_retinanet.yaml', help='Configuration file to use') # Example new config name
     parser.add_argument('--gpu_ids', type=str, default='4', help='GPU IDs to use (comma-separated)')
     args = parser.parse_args()
 
