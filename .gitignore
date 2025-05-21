@@ -264,3 +264,8 @@ output/
 data/
 output_detection/
 *.log
+
+
+
+configs/
+output_detection/
