@@ -91,6 +91,8 @@ CMNeXt architecture in Hub2Fuse paradigm and asymmetric branches, having e.g., M
 
 ```bash
 conda env create -f environment_edited.yaml
+conda install pytorch==1.13.0 torchvision==0.14.0 torchaudio==0.13.0 pytorch-cuda=11.7 -c pytorch -c nvidia
+
 conda activate cmnext
 # Optional: install apex follow: https://github.com/NVIDIA/apex
 ```
