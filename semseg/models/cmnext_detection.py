@@ -861,7 +861,6 @@ class CMNeXtRetinaNet(nn.Module):
                 'scores': scores[keep_idx],
                 'labels': labels[keep_idx]
             })
-
         return results
 
     # def decode_boxes(self, anchors, deltas):

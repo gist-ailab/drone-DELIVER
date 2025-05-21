@@ -192,6 +192,18 @@ def main(cfg, gpu, save_dir):
             # writer.add_scalar('train/lr', current_lr, epoch)
         torch.cuda.empty_cache()
 
+        if (epoch + 1) % 10 == 0 and (not train_cfg.get('DDP', False) or dist.get_rank() == 0):
+            ckpt_name = f"{model_cfg['NAME']}_{model_cfg['BACKBONE']}_{dataset_cfg['NAME']}"\
+                        f"_epoch{epoch+1:03d}.pth"
+            torch.save({
+                'epoch': epoch + 1,
+                'model_state_dict': model.module.state_dict() if train_cfg.get('DDP', False) else model.state_dict(),
+                'optimizer_state_dict': optimizer.state_dict(),
+                'scheduler_state_dict': scheduler.state_dict(),
+                'best_mAP': best_mAP,
+            }, save_dir / ckpt_name)
+            logger.info(f"Epoch {epoch+1}: periodic checkpoint saved → {ckpt_name}")
+
         # Evaluation
         if ((epoch+1) % train_cfg.get('EVAL_INTERVAL', 1) == 0) or (epoch+1) == epochs:
             # if (not train_cfg.get('DDP', False) or torch.distributed.get_rank() == 0):
@@ -244,7 +256,15 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     # Default config might need to be a detection-specific one
     parser.add_argument('--cfg', type=str, default='configs/deliver_detection_rgbdl_retinanet.yaml', help='Configuration file to use') # Example new config name
+    parser.add_argument('--gpu_ids', type=str, default='4', help='GPU IDs to use (comma-separated)')
     args = parser.parse_args()
+
+
+    # GPU setup
+    gpu_ids = args.gpu_ids.split(',')
+    os.environ['CUDA_VISIBLE_DEVICES'] = ','.join(gpu_ids)
+    os.environ['PYTHONHASHSEED'] = str(3407) # Set hash seed for reproducibility
+    os.environ['OMP_NUM_THREADS'] = '1' # Set OMP threads to 1 for reproducibility
 
     with open(args.cfg) as f:
         cfg = yaml.load(f, Loader=yaml.SafeLoader)
