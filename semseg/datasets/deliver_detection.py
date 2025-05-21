@@ -27,13 +27,11 @@ class DELIVERCOCO(Dataset):
     """
     CLASSES = ["Human", "Car"] # Example, adjust if different based on coco.json categories
 
-    def __init__(self, root: str = 'data/DELIVER', split: str = 'train', 
+    def __init__(self, root: str = 'data/DELIVER', ann_path: str = 'data/DELIVER/train_coco.json', 
                  transform=None, modals: List[str] = ['img'], case: str = None,
                  target_img_size: Union[int, Tuple[int, int]] = (1024, 1024)):
         super().__init__()
-        assert split in ['train', 'val', 'test']
         self.root = Path(root)
-        self.split = split
         self.modals = modals # e.g., ['img', 'depth']
         self.case = case # Could be used to select sub-folders or specific conditions
         self.target_img_size = target_img_size # Used for get_val_augmentation
@@ -41,15 +39,18 @@ class DELIVERCOCO(Dataset):
         # Initialize augmentations if not provided (e.g., for train/val splits)
         if transform is None:
             additional_targets_setup = {}
-            if split == 'train':
+
+            if 'train' in ann_path:
                 self.transform = get_train_augmentation(self.target_img_size, additional_targets=additional_targets_setup)
+                split = 'train'
             else: # val or test
                 self.transform = get_val_augmentation(self.target_img_size, additional_targets=additional_targets_setup)
+                split = 'val'
         else:
             self.transform = transform
 
 
-        ann_path = os.path.join(self.root , f'coco_{split}.json')
+        # ann_path = os.path.join(self.root , f'coco_{split}.json')
         with open(ann_path, 'r') as f:
             coco_data = json.load(f)
 
@@ -63,7 +64,6 @@ class DELIVERCOCO(Dataset):
         # Update CLASSES from coco_data if available and consistent
         if 'categories' in coco_data:
             self.CLASSES = [cat['name'] for cat in sorted(coco_data['categories'], key=lambda x: x['id'])]
-
 
         self.annotations = {}
         for ann in coco_data['annotations']:
@@ -121,7 +121,6 @@ class DELIVERCOCO(Dataset):
         # anns = self.annotations.get(img_id, [])
         # bboxes_coco = [] # List of [x, y, w, h]
         # labels_list = []
-
         # anns = self.annotations.get(img_id, [])
         # bboxes_coco = [ann['bbox'] for ann in anns]
         # labels_list = [self.cat_id_to_idx[ann['category_id']] for ann in anns]  # ★ 0-based 변환

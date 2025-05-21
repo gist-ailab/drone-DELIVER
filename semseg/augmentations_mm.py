@@ -367,7 +367,8 @@ def get_train_augmentation(size: Union[int, Tuple[int], List[int]], seg_fill: in
         RandomColorJitter(p=0.2), # 
         RandomHorizontalFlip(p=0.5), #
         RandomGaussianBlur((3, 3), p=0.2), #
-        RandomResizedCrop(size, scale=(0.5, 2.0), seg_fill=seg_fill), #
+        RandomResizedCrop(size, scale=(0.5, 1.5), seg_fill=seg_fill), #
+        Resize(size),
         Normalize((0.485, 0.456, 0.406), (0.229, 0.224, 0.225))
     ])
 
