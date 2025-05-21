@@ -66,8 +66,13 @@ def main(cfg, gpu, save_dir):
     train_augs = get_train_augmentation(train_cfg['IMAGE_SIZE'], additional_targets=additional_targets_setup)
     val_augs = get_val_augmentation(eval_cfg['IMAGE_SIZE'], additional_targets=additional_targets_setup)
 
-    trainset = DELIVERCOCO(root=dataset_cfg['ROOT'], split='train', transform=train_augs, modals=dataset_cfg['MODALS'], target_img_size = train_cfg['IMAGE_SIZE'])
-    valset = DELIVERCOCO(root=dataset_cfg['ROOT'], split='val', transform=val_augs, modals=dataset_cfg['MODALS'],target_img_size = eval_cfg['IMAGE_SIZE'])
+
+    train_json= dataset_cfg['TRAIN_JSON']
+    val_json= dataset_cfg['VAL_JSON']
+    
+    trainset = DELIVERCOCO(root=dataset_cfg['ROOT'], ann_path = train_json, transform=train_augs, modals=dataset_cfg['MODALS'], target_img_size = train_cfg['IMAGE_SIZE'])
+    valset = DELIVERCOCO(root=dataset_cfg['ROOT'], ann_path=val_json, transform=val_augs, modals=dataset_cfg['MODALS'],target_img_size = eval_cfg['IMAGE_SIZE'])
+    
     
     # Path to the ground truth COCO annotation file for validation
     coco_val_gt_path = os.path.join(dataset_cfg['ROOT'], 'coco_val.json')
