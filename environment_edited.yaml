@@ -11,8 +11,8 @@ dependencies:
   - torchvision=0.14.1
   - torchaudio=0.13.1
   - pytorch-cuda=11.6  # CUDA 지원을 위해 필수
-  - cudatoolkit=11.6  # 명시적으로 적어도 무방함
-  - cudnn=8.2.1
+  # - cudatoolkit=11.6  # 명시적으e로 적어도 무방함
+  # - cudnn=8.2.1
   - mkl=2021.4.0
   - numpy=1.21.2
   - pillow=9.2.0
