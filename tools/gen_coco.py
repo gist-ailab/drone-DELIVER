@@ -152,6 +152,8 @@ def create_coco_json(root_dir, img_lists, mode, box_type='xywh'):
                     continue
                 if box_type == 'xywh':
                     box = [box[0], box[1], w, h]
+                elif box_type == 'xyxy':
+                    box = [box[0], box[1], box[2], box[3]]
 
                 coco_annotations.append({
                     "id": int(annotation_id),
@@ -187,13 +189,13 @@ def main():
     parser = argparse.ArgumentParser(description='Generate COCO JSON file')
     parser.add_argument('--root_dir', type=str, default = '/media/ailab/HDD1/Workspace/src/Project/Drone24/detection/drone-DELIVER/data/DELIVER', help='Root directory of the dataset')
     parser.add_argument('--output_dir', type=str, default='/media/ailab/HDD1/Workspace/src/Project/Drone24/detection/drone-DELIVER/data/DELIVER', help='Output directory for the COCO JSON file')
-    parser.add_argument('--mode', type=str, default='test', help='Mode of the dataset (train, val, test)')
+    parser.add_argument('--mode', type=str, default='train', help='Mode of the dataset (train, val, test)')
     args = parser.parse_args()
     root_dir = args.root_dir
     output_dir = args.output_dir
     mode = args.mode
     img_lists = gen_img_list(root_dir, mode)
-    coco_json = create_coco_json(root_dir, img_lists, mode)
+    coco_json = create_coco_json(root_dir, img_lists, mode, box_type='xyxy')
     save_coco_json(coco_json, output_dir, mode)
 
 

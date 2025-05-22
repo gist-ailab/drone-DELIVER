@@ -1,7 +1,6 @@
 # train_detection_mm.py
 import sys
 import os
-# Add the project root directory to sys.path
 project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))
 if project_root not in sys.path:
     sys.path.insert(0, project_root)
@@ -34,9 +33,7 @@ from semseg.losses import get_loss # Loss is handled by FasterRCNN
 from semseg.schedulers import get_scheduler # Re-evaluate if needed for detection
 from semseg.optimizers import get_optimizer # Re-evaluate if needed for detection
 from semseg.schedulers import get_scheduler
-from semseg.optimizers import get_optimizer
 from semseg.utils.utils import fix_seeds, setup_cudnn, cleanup_ddp, setup_ddp, get_logger, cal_flops # print_iou removed
-# from val_mm import evaluate # evaluate function is for segmentation, needs replacement for detection
 from utils.eval_utils import evaluate_detection # Adjusted import for detection evaluation
 from utils.train_utils import get_model_from_config
 

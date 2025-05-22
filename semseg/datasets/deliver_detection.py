@@ -1,3 +1,5 @@
+#deliver_detection.py
+
 import os
 import torch
 import numpy as np
@@ -128,8 +130,8 @@ class DELIVERCOCO(Dataset):
         # --- inside DELIVERCOCO.__getitem__ ---
         bboxes_xyxy, labels_list = [], []
         for ann in self.annotations.get(img_id, []):
-            x, y, w, h = ann["bbox"]               # COCO 형식
-            bboxes_xyxy.append([x, y, x + w, y + h])     # ★ 변환
+            box_x, box_y,box_x2, box_y2 = ann["bbox"]               # COCO 형식
+            bboxes_xyxy.append([box_x, box_y,box_x2, box_y2])     # ★ 변환
             labels_list.append(self.cat_id_to_idx[ann["category_id"]])
 
         sample["bboxes"] = bboxes_xyxy
