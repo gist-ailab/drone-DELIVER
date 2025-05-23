@@ -8,6 +8,7 @@ import json
 from pycocotools.coco import COCO
 from pycocotools.cocoeval import COCOeval
 from tqdm import tqdm
+import cv2
 
 # COCO Evaluation function
 def evaluate_detection(model, dataloader, device, coco_gt_path, logger_instance):
@@ -31,7 +32,8 @@ def evaluate_detection(model, dataloader, device, coco_gt_path, logger_instance)
                     if score < 0.05:
                         continue        
                     x1, y1, x2, y2 = box
-                    coco_box = [x1, y1, x2 - x1, y2 - y1]
+                    # coco_box = [x1, y1, x2 - x1, y2 - y1]
+                    coco_box = [x1,y1,x2,y2] # pascal voc format
                     coco_results.append({
                         'image_id': image_id,
                         'category_id': int(label) +1,   # 0 based to 1 ased
@@ -43,7 +45,9 @@ def evaluate_detection(model, dataloader, device, coco_gt_path, logger_instance)
         logger_instance.warning("No detections found to evaluate.")
         return 0.0, {} # mAP, all_stats
     logger_instance.info(f"Generated {len(coco_results)} detections for {len(set(img_ids_processed))} images.")
-    dt_results_path = Path('.') / 'tmp_coco_detection_results.json' 
+    # dt_results_path = 
+    dt_results_path = "./output_detection/detection_results.json" # Temporary path for COCO results
+
     with open(dt_results_path, 'w') as f:
         json.dump(coco_results, f)
     temp_gt_path = None
@@ -91,4 +95,41 @@ def evaluate_detection(model, dataloader, device, coco_gt_path, logger_instance)
         if temp_gt_path and os.path.exists(temp_gt_path):
             os.remove(temp_gt_path) # Clean up temporary converted GT file
 
+    vis_coco(coco_gt_path, dt_results_path, save_dir='/media/jemo/HDD1/Workspace/src/Project/Drone24/detection/drone-DELIVER/tmp/pred_check')
     return mAP, all_stats_dict
+
+
+
+
+def vis_coco(gt_coco_path, pred_coco_path, save_dir ='/media/jemo/HDD1/Workspace/src/Project/Drone24/detection/drone-DELIVER/tmp/pred_check'):
+    os.makedirs(save_dir, exist_ok=True)
+    COLORS = [[0, 255, 0], [255, 0, 0], [0, 0, 255], [255, 255, 0], [0, 255, 255], [255, 0, 255]]
+    coco_gt = COCO(gt_coco_path)
+    img_dir = os.path.dirname(gt_coco_path)
+    with open(pred_coco_path, 'r') as f:
+        preds = json.load(f)
+    image_ids = set([pred['image_id'] for pred in preds])
+    for image_id in tqdm(image_ids):
+        img_info = coco_gt.loadImgs(image_id)[0]
+        img_path = os.path.join(img_dir, img_info['file_name'])
+        img = cv2.imread(img_path)
+        h, w, _ = img.shape
+        gt_anns = coco_gt.loadAnns(coco_gt.getAnnIds(imgIds=image_id))
+        pred_anns = [pred for pred in preds if pred['image_id'] == image_id]
+        
+        # Draw GT boxes
+        for ann in gt_anns:
+            bbox = ann['bbox']
+            x1, y1, w, h = map(int, bbox)
+            x2, y2 = x1 + w, y1 + h
+            cv2.rectangle(img, (x1, y1), (x2, y2), COLORS[0], 2)
+        
+        # Draw Pred boxes
+        for ann in pred_anns:
+            bbox = ann['bbox']
+            x1, y1, w, h = map(int, bbox)
+            x2, y2 = x1 + w, y1 + h
+            cv2.rectangle(img, (x1, y1), (x2, y2), COLORS[1], 2)
+        
+        save_path = os.path.join(save_dir, f"{image_id}.png")
+        cv2.imwrite(save_path, img)

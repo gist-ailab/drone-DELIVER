@@ -9,7 +9,7 @@ def get_model_from_config(cfg, num_classes):
     criterion_cfg = cfg.get('CRITERION', {})
 
     if model_name == 'cmnextfasterrcnn':
-        from semseg.models.cmnext_detection import CMNeXtFasterRCNN
+        from semseg.models.cmnext_retinanet import CMNeXtFasterRCNN
         return CMNeXtFasterRCNN(
             backbone_name=model_kwargs['BACKBONE'],
             num_classes=num_classes,
@@ -17,7 +17,7 @@ def get_model_from_config(cfg, num_classes):
         )
 
     elif model_name == 'cmnextdetr':
-        from semseg.models.cmnext_detection import CMNeXtDETR
+        from semseg.models.cmnext_retinanet import CMNeXtDETR
         return CMNeXtDETR(
             backbone=model_kwargs['BACKBONE'],
             num_classes=num_classes,
@@ -29,8 +29,8 @@ def get_model_from_config(cfg, num_classes):
         )
     
     elif model_name == 'cmnextretinanet':
-        from semseg.models.cmnext_detection import CMNeXtRetinaNet  
-        from semseg.models.cmnext_detection import CMNeXtBackbone
+        from semseg.models.cmnext_retinanet import CMNeXtRetinaNet  
+        from semseg.models.cmnext_retinanet import CMNeXtBackbone
 
         backbone = CMNeXtBackbone(
             backbone=model_kwargs['BACKBONE'],

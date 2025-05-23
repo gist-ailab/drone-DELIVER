@@ -25,7 +25,9 @@ import numpy as np
 import json
 
 # Detection specific imports
-from semseg.models.cmnext_detection import CMNeXtFasterRCNN # Adjusted import
+from semseg.models.cmnext_retinanet import CMNeXtRetinaNet # Adjusted import
+from semseg.models.cmnext_backbone import CMNeXtBackbone # Adjusted import
+from semseg.models.cmnext_rcnn import CMNeXtFasterRCNN
 from semseg.datasets.deliver_detection import DELIVERCOCO # Adjusted import
 
 from semseg.augmentations_detection_mm2 import get_train_augmentation, get_val_augmentation
@@ -79,10 +81,7 @@ def main(cfg, gpu, save_dir):
     class_names = trainset.CLASSES # For logging/evaluation
 
     # Model
-    # CMNeXtFasterRCNN expects backbone_name, num_classes, modals
-    # model = CMNeXtFasterRCNN(backbone_name=model_cfg['BACKBONE'], num_classes=num_detection_classes, modals=dataset_cfg['MODALS'])
     model = get_model_from_config(cfg, num_detection_classes)
-
     
     resume_checkpoint = None
     if resume_path and os.path.isfile(resume_path):
@@ -99,7 +98,6 @@ def main(cfg, gpu, save_dir):
     # Scheduler might need adjustment based on detection training practices
     scheduler = get_scheduler(sched_cfg['NAME'], optimizer, int((epochs+1)*iters_per_epoch), sched_cfg.get('POWER', 0.9), 
                               iters_per_epoch * sched_cfg.get('WARMUP_EPOCHS', 0), sched_cfg.get('WARMUP_RATIO', 0.1))
-
 
     if train_cfg.get('DDP', False):
         sampler = DistributedSampler(trainset, dist.get_world_size(), dist.get_rank(), shuffle=True)
@@ -189,6 +187,9 @@ def main(cfg, gpu, save_dir):
             # writer.add_scalar('train/lr', current_lr, epoch)
         torch.cuda.empty_cache()
 
+        if epoch==30:
+            print('stop')
+
         if (epoch + 1) % 10 == 0 and (not train_cfg.get('DDP', False) or dist.get_rank() == 0):
             ckpt_name = f"{model_cfg['NAME']}_{model_cfg['BACKBONE']}_{dataset_cfg['NAME']}"\
                         f"_epoch{epoch+1:03d}.pth"
@@ -252,7 +253,7 @@ def main(cfg, gpu, save_dir):
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     # Default config might need to be a detection-specific one
-    parser.add_argument('--cfg', type=str, default='configs/levine-deliver_detection_rgbdl_retinanet.yaml', help='Configuration file to use') # Example new config name
+    parser.add_argument('--cfg', type=str, default='configs/deliver_detection_rgbdl_retinanet.yaml', help='Configuration file to use') # Example new config name
     parser.add_argument('--gpu_ids', type=str, default='4', help='GPU IDs to use (comma-separated)')
     args = parser.parse_args()
 
@@ -275,7 +276,6 @@ if __name__ == '__main__':
     else:
         gpu = cfg.get('GPU_ID', 0) # Use a single GPU if DDP is false
         os.environ['CUDA_VISIBLE_DEVICES'] = str(gpu)
-
 
     modals_str = ''.join([m[0] for m in cfg['DATASET']['MODALS']]) if 'MODALS' in cfg['DATASET'] else 'rgb'
     # Construct experiment name

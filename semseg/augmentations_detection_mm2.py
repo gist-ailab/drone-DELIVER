@@ -11,11 +11,10 @@ def get_train_augmentation(img_size,
         additional_targets = {}
     h, w = img_size[0], img_size[1]
     albumentation_aug = A.Compose([
+        A.RandomCrop(width = w, height=h, p=1.0),  # 예시용 crop
         A.ColorJitter(p=0.2),
         A.HorizontalFlip(p=0.5),
         A.GaussianBlur(blur_limit=(3, 3), p=0.5),
-        A.RandomResizedCrop(height=h, width=w, scale=(0.8, 1.0), ratio=(0.75, 1.33), p=0.5),
-        A.Resize(h, w),
         A.Normalize(mean=(0.485, 0.456, 0.406), std=(0.229, 0.224, 0.225)),
         ToTensorV2()
     ],

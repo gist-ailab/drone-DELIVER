@@ -18,6 +18,33 @@ from torch.utils.data import DataLoader
 from semseg.augmentations_detection_mm2 import get_train_augmentation, get_val_augmentation
 import json
 
+
+def post_process(a):
+    # tensor = tensor[0]
+    a = a.numpy().transpose(1,2,0)
+    a = np.abs(a)*100
+    a= a.astype(np.uint8)
+    return a
+
+def save_img(return_list, targets):
+    revert_list = []
+    for i in return_list:
+        tmp = post_process(i)
+        revert_list.append(tmp)
+    
+    for i, box in enumerate(targets['boxes']):
+        color = (255, 0, 0) if i % 2 == 0 else (255, 255, 0)
+        x1, y1, x2, y2 = map(int, box)
+        cv2.rectangle(revert_list[0], (x1, y1), (x2, y2), color, 2)
+        cv2.rectangle(revert_list[1], (x1, y1), (x2, y2), color, 2)
+        cv2.rectangle(revert_list[2], (x1, y1), (x2, y2), color, 2)
+        cv2.rectangle(revert_list[3], (x1, y1), (x2, y2), color, 2)
+    cat = cv2.hconcat(revert_list)
+    img_name = str(targets['image_id'].item()) + '.png'
+    cv2.imwrite('/media/jemo/HDD1/Workspace/src/Project/Drone24/detection/drone-DELIVER/tmp/loader_check/' + img_name, cat)
+
+
+
 def coco_bbox_to_pascal_voc(bbox):
     """Converts COCO bbox [x, y, w, h] to Pascal VOC [xmin, ymin, xmax, ymax]."""
     return [bbox[0], bbox[1], bbox[0] + bbox[2], bbox[1] + bbox[3]]
@@ -101,60 +128,56 @@ class DELIVERCOCO(Dataset):
         x2 = rgb.replace('/img', '/lidar').replace('_rgb', '_lidar')
         x3 = rgb.replace('/img', '/event').replace('_rgb', '_event')
 
-        sample = {}
-        sample['image'] = self._open_img(rgb)  # e.g., (H, W, 3)
-        H, W = sample['image'].shape[:2]
+        # sample = {}
+        # sample['image'] = self._open_img(rgb)  # e.g., (H, W, 3)
+        rgb_img = self._open_img(rgb)
+        H,W = rgb_img.shape[:2]
+        # H, W = sample['image'].shape[:2]
 
         if 'depth' in self.modals:
             dimg = self._open_img(x1)
-            sample['depth'] = cv2.resize(dimg, (W, H), interpolation=cv2.INTER_NEAREST)
+            dimg = cv2.resize(dimg, (W, H), interpolation=cv2.INTER_NEAREST)
+            # sample['depth'] = cv2.resize(dimg, (W, H), interpolation=cv2.INTER_NEAREST)
 
         if 'lidar' in self.modals:
             limg = self._open_img(x2)
-            sample['lidar'] = cv2.resize(limg, (W, H), interpolation=cv2.INTER_NEAREST)
+            limg = cv2.resize(limg, (W, H), interpolation=cv2.INTER_NEAREST)
+            # sample['lidar'] = cv2.resize(limg, (W, H), interpolation=cv2.INTER_NEAREST)
 
         if 'event' in self.modals:
             eimg = self._open_img(x3)
-            sample['event'] = cv2.resize(eimg, (W, H), interpolation=cv2.INTER_NEAREST)
-
-        # --- Load Annotations ---
-        # anns = self.annotations.get(img_id, [])
-        # bboxes_coco = [] # List of [x, y, w, h]
-        # labels_list = []
-        # anns = self.annotations.get(img_id, [])
-        # bboxes_coco = [ann['bbox'] for ann in anns]
-        # labels_list = [self.cat_id_to_idx[ann['category_id']] for ann in anns]  # ★ 0-based 변환
-        # print('DEBUG::::raw category_id sample:', ids[:10])  # 아마 [1] 또는 [1,2] ...
-
+            eimg = cv2.resize(eimg, (W, H), interpolation=cv2.INTER_NEAREST)
+            # sample['event'] = cv2.resize(eimg, (W, H), interpolation=cv2.INTER_NEAREST)
 
         # --- inside DELIVERCOCO.__getitem__ ---
         bboxes_xyxy, labels_list = [], []
         for ann in self.annotations.get(img_id, []):
-            box_x, box_y,box_x2, box_y2 = ann["bbox"]               # COCO 형식
-            bboxes_xyxy.append([box_x, box_y,box_x2, box_y2])     # ★ 변환
+            box_x, box_y,box_x2, box_y2 = ann["bbox"]              
+            bboxes_xyxy.append([box_x, box_y,box_x2, box_y2])     
             labels_list.append(self.cat_id_to_idx[ann["category_id"]])
 
-        sample["bboxes"] = bboxes_xyxy
-        sample["labels"] = labels_list
-
         if self.transform:
-            transformed = self.transform(**sample)
-            sample['image'] = transformed['image']
-            if 'depth' in self.modals:
-                sample['depth'] = transformed['depth']
-            if 'lidar' in self.modals:      
-                sample['lidar'] = transformed['lidar']
-            if 'event' in self.modals:
-                sample['event'] = transformed['event']
+            augmented = self.transform(
+                image = rgb_img,
+                depth = dimg,
+                lidar = limg,
+                event = eimg,
+                bboxes = bboxes_xyxy,
+                labels = labels_list,
+                class_labels = labels_list,  # Added for class labels
+            )
 
-            return_list = [sample[k] for k in self.modals]
+            return_list = [augmented[k] for k in self.modals]
             target = {
-                'boxes': torch.tensor(transformed['bboxes'], dtype=torch.float32),
-                'labels': torch.tensor(transformed['labels'], dtype=torch.int64),
+                'boxes': torch.tensor(augmented['bboxes'], dtype= torch.float32),
+                'labels': torch.tensor(augmented['labels'], dtype=torch.int64),
                 'image_id': torch.tensor(img_id, dtype=torch.int64)
             }
-        
+
+            # Save the augmented images for debugging
+            # save_img(return_list, target)
             return return_list, target
+
         else:
             # 변환이 없는 경우 처리
             assert False, "Transform is None, but no transform was provided in __init__."
